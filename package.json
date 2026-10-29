@@ -1,7 +1,7 @@
 {
   "name": "spreadsheet",
   "productName": "Spreadsheet",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A fast, offline spreadsheet viewer and editor for CSV, TSV and XLSX",
   "main": "dist/main/main.cjs",
   "private": true,
