@@ -70,8 +70,8 @@ export class StyleCache {
 
   constructor(private wb: Workbook, private zoom: number) {
     this.sheet = new CSSStyleSheet();
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets.filter((s) => !(s as any).__sheeyit), this.sheet];
-    (this.sheet as any).__sheeyit = true;
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets.filter((s) => !(s as any).__cellStyles), this.sheet];
+    (this.sheet as any).__cellStyles = true;
   }
 
   get(xf: number | undefined): XfInfo {

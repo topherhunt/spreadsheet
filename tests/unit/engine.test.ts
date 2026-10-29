@@ -50,6 +50,21 @@ describe('formula engine', () => {
     expect(e.evaluate(0, '=DATE(2024,1,1)')).toBe(45292);
     expect(e.evaluate(0, '=TEXT(45292,"yyyy-mm-dd")')).toBe('2024-01-01');
     expect(e.evaluate(0, '=DATE(1900,3,1)')).toBe(61);
+    expect(e.evaluate(0, '=DATE(1900,1,1)')).toBe(1);
+    expect(e.evaluate(0, '=DAY(60)')).toBe(29); // Excel's phantom Feb 29, 1900
+    expect(e.evaluate(0, '=DATEVALUE("3/15/2024")')).toBe(45366);
+    expect(e.evaluate(0, '=DATEVALUE("2024-03-15")')).toBe(45366);
+  });
+
+  it('formats with TEXT the way Excel does', () => {
+    const e = new Engine(book([[]]));
+    expect(e.evaluate(0, '=TEXT(0.256,"0%")')).toBe('26%');
+    expect(e.evaluate(0, '=TEXT(1234.5,"$#,##0.00")')).toBe('$1,234.50');
+    expect(e.evaluate(0, '=TEXT(1234,"£#,##0")')).toBe('£1,234');
+    expect(e.evaluate(0, '=TEXT(45292,"dddd, mmmm d")')).toBe('Monday, January 1');
+    expect(e.evaluate(0, '=TEXT(100000000000,"General")')).toBe('1E+11');
+    expect(e.evaluate(0, '=TEXT("12","0.0")')).toBe('12.0');
+    expect(e.evaluate(0, '=INT(-1.5)')).toBe(-2);
   });
 
   it('spills dynamic arrays into neighbouring cells and records the extent', () => {
@@ -88,6 +103,45 @@ describe('formula engine', () => {
     expect(e.evaluate(0, '=TEXTBEFORE("a.b.c",".",-1)')).toBe('a.b');
     expect(e.evaluate(0, '=TEXTAFTER("a.b.c",".")')).toBe('b.c');
     expect(e.evaluate(0, '=XLOOKUP("cherry",A1:C1,A1:C1)')).toBe('cherry');
+  });
+
+  it('evaluates Excel statistical, lookup and text functions HyperFormula lacks', () => {
+    const wb = book([[n(1), n(10), { v: 'a' }], [n(2), n(20), { v: 'b' }], [n(2), n(30), { v: 'a' }], [n(4), n(40), { v: 'b' }], [n(5), n(50), { v: 'a' }]]);
+    const e = new Engine(wb);
+    expect(e.evaluate(0, '=AVERAGEIFS(B1:B5,C1:C5,"a",A1:A5,">1")')).toBe(40);
+    expect(e.evaluate(0, '=LOOKUP(3,A1:A5,B1:B5)')).toBe(30);
+    expect(e.evaluate(0, '=LOOKUP(2,1/(C1:C5="b"),B1:B5)')).toBe(40);
+    expect(e.evaluate(0, '=MODE(A1:A5)')).toBe(2);
+    expect(e.evaluate(0, '=RANK(4,A1:A5)')).toBe(2);
+    expect(e.evaluate(0, '=RANK.AVG(2,A1:A5,1)')).toBe(2.5);
+    expect(e.evaluate(0, '=INTERCEPT(B1:B5,A1:B5)')).toEqual({ error: '#N/A' });
+    expect(e.evaluate(0, '=FORECAST(3,{2,4,6},{1,2,3})')).toBe(6);
+    expect(e.evaluate(0, '=PERCENTRANK(A1:A5,4)')).toBe(0.75);
+    expect(e.evaluate(0, '=TRIMMEAN({1,2,3,4,100},0.4)')).toBe(3);
+    expect(e.evaluate(0, '=TYPE(C1)*100+TYPE(A1:A2)')).toBe(264);
+    expect(e.evaluate(0, '=ERROR.TYPE(1/0)')).toBe(2);
+    expect(e.evaluate(0, '=NUMBERVALUE("1.234,5",",",".")')).toBe(1234.5);
+    expect(e.evaluate(0, '=FIXED(1234.567,1)&" "&DOLLAR(-1234.567)')).toBe('1,234.6 ($1,234.57)');
+    expect(e.evaluate(0, '=PERMUT(5,2)+PERMUTATIONA(3,2)+GESTEP(5,4)')).toBe(30);
+    expect(e.evaluate(0, '=MDETERM({1,2;3,4})')).toBe(-2);
+  });
+
+  it('keeps the saved value of a legacy formula Excel evaluated by implicit intersection', () => {
+    const wb = book([[n(1)], [n(2), { v: 20, f: 'A1:A3*10' }], [n(3)]]);
+    const e = new Engine(wb);
+    expect(getCell(wb.sheets[0], 1, 1)).toMatchObject({ v: 20, frozen: true });
+    expect(e.value(0, 2, 1)).toBeNull();
+    expect([...wb.unsupportedFunctions]).toEqual(['implicit intersection']);
+  });
+
+  it('keeps the saved values of formulas that span sheets', () => {
+    const wb = loadFixture('55906-MultiSheetRefs.xlsx');
+    const e = new Engine(wb);
+    const cells = wb.sheets.flatMap((s) => s.rows.flatMap((r) => (r?.cells ?? []).filter((c) => c?.f)));
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((c) => c!.frozen)).toBe(true);
+    expect(wb.unsupportedFunctions.has('3-D sheet references')).toBe(true);
+    e.destroy();
   });
 
   it('freezes formulas with unknown functions at their cached value and lists them', () => {

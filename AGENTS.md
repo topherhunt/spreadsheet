@@ -1,4 +1,4 @@
-# Working on Sheeyit
+# Working on Spreadsheet
 
 Electron app: `src/main` (window, menus, file dialogs, IPC; bundled by esbuild to `dist/main/*.cjs`), `src/renderer` (UI; Vite, root `src/renderer`, output `dist/renderer`), `src/core` (the spreadsheet model, with no DOM or Electron, so Vitest runs it directly), `src/shared/api.ts` (the IPC contract and `MenuCommand` list).
 
@@ -8,7 +8,7 @@ Electron app: `src/main` (window, menus, file dialogs, IPC; bundled by esbuild t
 - `core/doc.ts` (`Doc`) is the only way the UI mutates a workbook. Every edit records one undo step: cell edits via `putCells`, layout and structure changes via `snapshotStep`. It emits change events the renderer listens to.
 - `core/formula/engine.ts` mirrors the model into HyperFormula, which supplies values only. The model stays the source of truth for formulas. Formulas HyperFormula can't evaluate are `frozen` and keep the file's cached value. Extra functions are in `formula/functions.ts`.
 - `core/formula/refs.ts` tokenizes formulas just enough to move references, and leaves every other byte alone. All reference rewriting (copy, fill, insert/delete, rename, cut/paste) goes through `rewriteRefs`.
-- `core/xlsx/read.ts` and `write.ts`: untouched sheets (`pristine`) and every part Sheeyit doesn't model are written back byte-identical. Unsupported features are recorded in `features` so the banner can list them. XML with a DOCTYPE is refused.
+- `core/xlsx/read.ts` and `write.ts`: untouched sheets (`pristine`) and every part the app doesn't model are written back byte-identical. Unsupported features are recorded in `features` so the banner can list them. XML with a DOCTYPE is refused.
 - `core/csv.ts` keeps the raw text of cells it parsed as numbers, dates or booleans (`raw`), so untouched cells save exactly as read (`007`, `1200.50`).
 
 ## Renderer

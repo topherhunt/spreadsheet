@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, readBack, Sheeyit, test } from './harness';
+import { expect, readBack, Spreadsheet, test } from './harness';
 
 test('a new window shows an empty untitled XLSX workbook', async ({ launch }) => {
   const s = await launch();
@@ -76,7 +76,7 @@ test('Delete clears the selected cells', async ({ launch }) => {
 });
 
 test('the status bar sums the selected numbers', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'nums.csv', 'a\n1\n2\n3.5\n')]);
+  const s = await launch([Spreadsheet.write(dir, 'nums.csv', 'a\n1\n2\n3.5\n')]);
   await s.selectCell('A1:A4');
   await expect(s.page.locator('.qa-status')).toHaveText(/Sum: 6\.5\s+Average: 2\.1666666667\s+Count: 4/);
 });
@@ -97,7 +97,7 @@ test('saving a new workbook asks for a path and writes a readable XLSX', async (
 });
 
 test('the name box jumps to a range and to another sheet', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, '55906-MultiSheetRefs.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, '55906-MultiSheetRefs.xlsx')]);
   const names = await s.page.locator('.qa-tab').allTextContents();
   expect(names.length).toBeGreaterThan(1);
   await s.page.locator('.qa-name-box').fill(`'${names[1]}'!C5`);
@@ -107,7 +107,7 @@ test('the name box jumps to a range and to another sheet', async ({ dir, launch 
 });
 
 test('closing a window with unsaved changes asks, and Save writes the file first', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'close.csv', 'a,b\n1,2\n');
+  const file = Spreadsheet.write(dir, 'close.csv', 'a,b\n1,2\n');
   const s = await launch([file]);
   await s.enter('A2', '42');
   await s.answerMessage(0);
@@ -115,4 +115,14 @@ test('closing a window with unsaved changes asks, and Save writes the file first
   await s.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
   await closed;
   expect(readFileSync(file, 'utf8')).toBe('a,b\n42,2\n');
+});
+
+test('About shows the version, build commit and a link to the GitHub repo', async ({ launch }) => {
+  const s = await launch();
+  await s.command('about');
+  const version = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8')).version;
+  await expect(s.page.locator('.qa-about-version')).toHaveText(new RegExp(`^Version ${version.replace(/\./g, '\\.')} \\([0-9a-f]{7}\\)$`));
+  await expect(s.page.locator('.qa-about-link')).toHaveAttribute('href', 'https://github.com/topherhunt/spreadsheet');
+  await s.page.keyboard.press('Escape');
+  await expect(s.page.locator('.qa-about')).toHaveCount(0);
 });

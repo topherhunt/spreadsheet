@@ -51,7 +51,7 @@ else
   ' "$VERSION" "$CURRENT" || die "$VERSION is not newer than $CURRENT"
 fi
 TAG="v$VERSION"
-DMG="release/Sheeyit-$VERSION-arm64.dmg"
+DMG="release/Spreadsheet-$VERSION-arm64.dmg"
 [ -z "$(git ls-remote --tags origin "refs/tags/$TAG")" ] || die "$TAG is already released"
 
 # tests/e2e/pass-stamp-reporter.cjs writes the stamp on every passing local run;

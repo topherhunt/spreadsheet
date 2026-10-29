@@ -1,10 +1,10 @@
 import { join } from 'node:path';
-import { expect, readBack, Sheeyit, test } from './harness';
+import { expect, readBack, Spreadsheet, test } from './harness';
 
 const PEOPLE = 'name,team,score\nAna,red,90\nBen,blue,72\nCid,red,85\nDee,green,60\n';
 
 test('Auto table bolds the header row, freezes it and adds a filter', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'people.csv', PEOPLE)]);
+  const s = await launch([Spreadsheet.write(dir, 'people.csv', PEOPLE)]);
   await s.page.locator('.qa-tb-auto-table').click();
   await expect(s.page.locator('.qa-filter-btn')).toHaveCount(3);
   const state = await s.model<{ bold: boolean[]; freeze: unknown; filter: unknown }>(`(app) => ({
@@ -20,7 +20,7 @@ test('Auto table bolds the header row, freezes it and adds a filter', async ({ d
 });
 
 test('filtering by values hides the unchecked rows, and clearing shows them again', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'people.csv', PEOPLE)]);
+  const s = await launch([Spreadsheet.write(dir, 'people.csv', PEOPLE)]);
   await s.page.locator('.qa-tb-auto-table').click();
   await s.openFilter(1);
   const menu = s.page.locator('.qa-filter-menu');
@@ -38,7 +38,7 @@ test('filtering by values hides the unchecked rows, and clearing shows them agai
 });
 
 test('filtering by condition keeps only matching rows', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'people.csv', PEOPLE)]);
+  const s = await launch([Spreadsheet.write(dir, 'people.csv', PEOPLE)]);
   await s.page.locator('.qa-tb-auto-table').click();
   await s.openFilter(2);
   const menu = s.page.locator('.qa-filter-menu');
@@ -50,7 +50,7 @@ test('filtering by condition keeps only matching rows', async ({ dir, launch }) 
 });
 
 test('sorting from the filter menu reorders the rows under the header', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'people.csv', PEOPLE)]);
+  const s = await launch([Spreadsheet.write(dir, 'people.csv', PEOPLE)]);
   await s.page.locator('.qa-tb-auto-table').click();
   await s.openFilter(2);
   await s.page.locator('.qa-filter-menu .qa-sort-desc').click();
@@ -129,7 +129,7 @@ test('links can be added to a cell from the link prompt', async ({ launch }) => 
 
 
 test('find and replace changes every match on the sheet', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.write(dir, 'people.csv', PEOPLE)]);
+  const s = await launch([Spreadsheet.write(dir, 'people.csv', PEOPLE)]);
   await s.command('replace');
   await s.page.locator('.qa-find-input').fill('red');
   await expect(s.page.locator('.qa-find-count')).toHaveText('1 of 2');
@@ -218,6 +218,19 @@ test('the theme follows the system’s dark mode', async ({ launch }) => {
   await expect.poll(fg).not.toBe(lightFg);
   const lum = (c: string) => c.match(/\d+/g)!.slice(0, 3).map(Number).reduce((a, b) => a + b, 0);
   expect(lum(await bg())).toBeLessThan(lum(lightBg));
+});
+
+test('in dark mode the fill palette offers deep fills right below the grays', async ({ launch }) => {
+  const s = await launch([], { dark: true });
+  await s.page.locator('.qa-tb-fill').click();
+  const swatches = s.page.locator('.qa-palette-fill .qa-swatch');
+  const lum = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).reduce((a, b) => a + b, 0) / 3;
+  const row2 = await swatches.evaluateAll((els) => els.slice(10, 20).map((el) => (el as HTMLElement).dataset.color!));
+  expect(Math.max(...row2.map(lum))).toBeLessThan(60);
+  await s.page.keyboard.press('Escape');
+  await s.page.emulateMedia({ colorScheme: 'light' });
+  await s.page.locator('.qa-tb-fill').click();
+  await expect(swatches.nth(10)).toHaveAttribute('data-color', '#980000');
 });
 
 test('zoom changes cell size and shows the level', async ({ launch }) => {

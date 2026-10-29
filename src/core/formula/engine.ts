@@ -2,7 +2,7 @@ import { DetailedCellError, EmptyValue, ExportedCellChange, HyperFormula, type C
 import { inRange, MAX_COLS, MAX_ROWS, parseRange, rangeToA1 } from '../addr';
 import { Cell, getCell, isError, Scalar, setCell, Sheet, Workbook } from '../model';
 import { displayFormula } from './xlfn';
-import { functionNames } from './refs';
+import { functionNames, has3dRef } from './refs';
 import './functions';
 
 export interface CellEdit { sheet: number; row: number; col: number; cell: Cell | undefined }
@@ -45,6 +45,7 @@ export class Engine {
 
   constructor(private wb: Workbook) {
     this.build();
+    this.freezeLegacySpills();
   }
 
   /** Recreates the engine from the model, for structural edits (sheets, rows, columns), and refreshes every formula's value. */
@@ -92,7 +93,10 @@ export class Engine {
       evaluateNullToZero: true,
       useColumnIndex: true,
       ignoreWhiteSpace: 'any',
-      nullDate: wb.date1904 ? { year: 1904, month: 1, day: 1 } : { year: 1899, month: 12, day: 30 },
+      // Excel's 1900 system counts a nonexistent Feb 29, 1900; serials from March 1900 on are the same either way.
+      nullDate: wb.date1904 ? { year: 1904, month: 1, day: 1 } : { year: 1899, month: 12, day: 31 },
+      leapYear1900: !wb.date1904,
+      dateFormats: ['MM/DD/YYYY', 'MM/DD/YY', 'YYYY/MM/DD'],
     });
     wb.sheets.forEach((s, i) => {
       if (s.kind !== 'worksheet') return;
@@ -122,16 +126,48 @@ export class Engine {
       if (id === undefined) return;
       s.rows.forEach((r, ri) => r?.cells.forEach((c, ci) => {
         if (!c?.f || c.frozen) return;
-        const v = this.hf.getCellValue({ sheet: id, row: ri, col: ci });
-        if (!(v instanceof DetailedCellError)) return;
-        const unknownFn = /^Function name (.+) not recognized/.exec(v.message);
-        const unresolved = v.type === 'ERROR' || unknownFn || /^Named expression .+ not recognized/.test(v.message);
-        if (!unresolved) return;
-        for (const fn of functionNames(displayFormula(c.f))) if (!KNOWN.has(fn)) this.wb.unsupportedFunctions.add(fn);
+        const formula = displayFormula(c.f);
+        if (has3dRef(formula)) {
+          this.wb.unsupportedFunctions.add('3-D sheet references');
+        } else {
+          const v = this.hf.getCellValue({ sheet: id, row: ri, col: ci });
+          if (!(v instanceof DetailedCellError)) return;
+          const unknownFn = /^Function name (.+) not recognized/.exec(v.message);
+          const unresolved = v.type === 'ERROR' || unknownFn || /^Named expression .+ not recognized/.test(v.message);
+          if (!unresolved) return;
+          for (const fn of functionNames(formula)) if (!KNOWN.has(fn)) this.wb.unsupportedFunctions.add(fn);
+        }
         if (c.v === null) return; // nothing cached to stand in for it
         frozen.push({ sheet: id, row: ri, col: ci, c });
       }));
     });
+    this.freeze(frozen);
+  }
+
+  /**
+   * A file formula saved without an array range is one Excel evaluated to a
+   * single value (implicit intersection, as in =A1:A3*2 beside row 2). The
+   * engine spills it instead, so it keeps the file's value.
+   */
+  private freezeLegacySpills(): void {
+    const frozen: { sheet: number; row: number; col: number; c: Cell }[] = [];
+    this.wb.sheets.forEach((s, si) => {
+      const id = this.ids.get(si);
+      if (id === undefined) return;
+      s.rows.forEach((r, ri) => r?.cells.forEach((c, ci) => {
+        if (!c?.f || c.frozen || c.arrayRef || c.v === null) return;
+        const v = this.hf.getCellValue({ sheet: id, row: ri, col: ci });
+        const size = this.arraySize(id, ri, ci);
+        const spills = (v instanceof DetailedCellError && v.type === 'SPILL') || (size && (size.h > 1 || size.w > 1));
+        if (!spills) return;
+        this.wb.unsupportedFunctions.add('implicit intersection');
+        frozen.push({ sheet: id, row: ri, col: ci, c });
+      }));
+    });
+    this.freeze(frozen);
+  }
+
+  private freeze(frozen: { sheet: number; row: number; col: number; c: Cell }[]): void {
     if (!frozen.length) return;
     this.hf.batch(() => {
       for (const { sheet, row, col, c } of frozen) {
@@ -234,22 +270,9 @@ export class Engine {
    * (the engine doesn't report those). Returns the cleared cells.
    */
   private syncArrayRef(si: number, row: number, col: number, c: Cell): Changed[] {
-    const id = this.ids.get(si)!;
-    // The array size isn't public API; fail loudly if HyperFormula's internals move.
-    const graph = (this.hf as unknown as { dependencyGraph: { getCell(a: object): unknown } }).dependencyGraph;
-    if (!graph || typeof graph.getCell !== 'function') throw new Error('HyperFormula dependency graph is unavailable');
-    const vertex = graph.getCell({ sheet: id, row, col }) as { array?: { raw?(): unknown[][] } } | undefined;
-    if (!vertex?.array) return [];
-    if (typeof vertex.array.raw !== 'function') throw new Error('HyperFormula array values changed shape');
-    // The engine sizes arrays by their inputs (FILTER of 4 rows is 4 tall); the result is what's non-empty.
-    const raw = vertex.array.raw();
-    let h = 0, w = 0;
-    raw.forEach((r, y) => r.forEach((v, x) => {
-      if (v === EmptyValue || v === null || v === undefined) return;
-      h = Math.max(h, y + 1);
-      w = Math.max(w, x + 1);
-    }));
-    h = Math.max(h, 1); w = Math.max(w, 1);
+    const size = this.arraySize(this.ids.get(si)!, row, col);
+    if (!size) return [];
+    const { h, w } = size;
     if (h === 1 && w === 1 && !c.arrayRef) return [];
     const next = { r1: row, c1: col, r2: row + h - 1, c2: col + w - 1 };
     const cleared: Changed[] = [];
@@ -263,6 +286,25 @@ export class Engine {
     }
     c.arrayRef = rangeToA1(next);
     return cleared;
+  }
+
+  /** The extent of a formula's array result, or undefined when it isn't an array. */
+  private arraySize(id: number, row: number, col: number): { h: number; w: number } | undefined {
+    // The array size isn't public API; fail loudly if HyperFormula's internals move.
+    const graph = (this.hf as unknown as { dependencyGraph: { getCell(a: object): unknown } }).dependencyGraph;
+    if (!graph || typeof graph.getCell !== 'function') throw new Error('HyperFormula dependency graph is unavailable');
+    const vertex = graph.getCell({ sheet: id, row, col }) as { array?: { raw?(): unknown[][]; error?: unknown } } | undefined;
+    if (!vertex?.array || vertex.array.error) return undefined; // an errored array's value is the error
+    if (typeof vertex.array.raw !== 'function') throw new Error('HyperFormula array values changed shape');
+    // The engine sizes arrays by their inputs (FILTER of 4 rows is 4 tall); the result is what's non-empty.
+    const raw = vertex.array.raw();
+    let h = 0, w = 0;
+    raw.forEach((r, y) => r.forEach((v, x) => {
+      if (v === EmptyValue || v === null || v === undefined) return;
+      h = Math.max(h, y + 1);
+      w = Math.max(w, x + 1);
+    }));
+    return { h: Math.max(h, 1), w: Math.max(w, 1) };
   }
 }
 

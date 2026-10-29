@@ -8,7 +8,7 @@ export function formatOf(path: string): FileFormat {
   const ext = /\.([^./\\]+)$/.exec(path)?.[1].toLowerCase();
   if (ext === 'xlsx' || ext === 'xlsm' || ext === 'csv' || ext === 'tsv') return ext;
   if (ext === 'txt' || ext === 'tab') return 'tsv';
-  throw new Error(`Sheeyit can’t open .${ext ?? ''} files. It opens .xlsx, .xlsm, .csv and .tsv.`);
+  throw new Error(`Can’t open .${ext ?? ''} files. Spreadsheet opens .xlsx, .xlsm, .csv and .tsv.`);
 }
 
 export function readWorkbook(bytes: Uint8Array, format: FileFormat): Workbook {

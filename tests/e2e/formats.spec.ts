@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, readBack, Sheeyit, test } from './harness';
+import { expect, readBack, Spreadsheet, test } from './harness';
 
 const CSV = 'id,name,amount,when\n007,"Smith, Jo",1200.50,2024-01-15\n008,Lee,99,2024-02-01\n';
 
 test('a CSV opens with its cells and saves edits without rewriting untouched text', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'people.csv', CSV);
+  const file = Spreadsheet.write(dir, 'people.csv', CSV);
   const s = await launch([file]);
   await expect(s.page.locator('.qa-format-badge')).toHaveText('CSV');
   await expect(s.page.locator('.qa-doc-title')).toHaveText('people.csv');
@@ -17,7 +17,7 @@ test('a CSV opens with its cells and saves edits without rewriting untouched tex
 });
 
 test('a TSV opens and saves back as tab-separated text', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'data.tsv', 'a\tb\n1\thello, world\n');
+  const file = Spreadsheet.write(dir, 'data.tsv', 'a\tb\n1\thello, world\n');
   const s = await launch([file]);
   await expect(s.page.locator('.qa-format-badge')).toHaveText('TSV');
   await expect(await s.cellAt('B2')).toHaveText('hello, world');
@@ -27,7 +27,7 @@ test('a TSV opens and saves back as tab-separated text', async ({ dir, launch })
 });
 
 test('saving a CSV with new formatting offers XLSX and writes a workbook next to it', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'fmt.csv', CSV);
+  const file = Spreadsheet.write(dir, 'fmt.csv', CSV);
   const s = await launch([file]);
   await s.selectCell('B2');
   await s.page.locator('.qa-tb-bold').click();
@@ -49,7 +49,7 @@ test('saving a CSV with new formatting offers XLSX and writes a workbook next to
 });
 
 test('saving a CSV with a formula can keep the CSV, writing the computed value', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'calc.csv', 'a,b\n2,3\n');
+  const file = Spreadsheet.write(dir, 'calc.csv', 'a,b\n2,3\n');
   const s = await launch([file]);
   await s.enter('C2', '=A2*B2');
   await s.answerMessage(1);
@@ -60,7 +60,7 @@ test('saving a CSV with a formula can keep the CSV, writing the computed value',
 });
 
 test('cancelling the CSV formatting prompt writes nothing and stays dirty', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'cancel.csv', CSV);
+  const file = Spreadsheet.write(dir, 'cancel.csv', CSV);
   const s = await launch([file]);
   await s.selectCell('A2');
   await s.page.locator('.qa-tb-italic').click();
@@ -73,7 +73,7 @@ test('cancelling the CSV formatting prompt writes nothing and stays dirty', asyn
 });
 
 test('Auto table on a CSV saves without asking, since it only changes the view', async ({ dir, launch }) => {
-  const file = Sheeyit.write(dir, 'auto.csv', CSV);
+  const file = Spreadsheet.write(dir, 'auto.csv', CSV);
   const s = await launch([file]);
   await s.page.locator('.qa-tb-auto-table').click();
   await expect(s.page.locator('.qa-filter-btn')).toHaveCount(4);
@@ -84,7 +84,7 @@ test('Auto table on a CSV saves without asking, since it only changes the view',
 });
 
 test('Save As converts an XLSX to CSV after warning what a CSV drops', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, '55906-MultiSheetRefs.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, '55906-MultiSheetRefs.xlsx')]);
   const out = join(dir, 'export.csv');
   await s.answerSave(out);
   await s.answerMessage(0);
@@ -96,7 +96,7 @@ test('Save As converts an XLSX to CSV after warning what a CSV drops', async ({ 
 });
 
 test('a macro-enabled workbook saves as XLSM with its macros, and refuses Save As XLSX', async ({ dir, launch }) => {
-  const file = Sheeyit.fixture(dir, 'SimpleMacro.xlsm');
+  const file = Spreadsheet.fixture(dir, 'SimpleMacro.xlsm');
   const s = await launch([file]);
   await expect(s.page.locator('.qa-format-badge')).toHaveText('XLSM');
   await expect(s.page.locator('.qa-banner')).toContainText('Macros (VBA)');

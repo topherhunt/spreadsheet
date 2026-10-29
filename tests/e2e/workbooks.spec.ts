@@ -1,13 +1,13 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
-import { expect, readBack, Sheeyit, test } from './harness';
+import { expect, readBack, Spreadsheet, test } from './harness';
 
 function parts(path: string): Record<string, Uint8Array> {
   return unzipSync(new Uint8Array(readFileSync(path)));
 }
 
 test('a workbook with charts, pivots and conditional formatting keeps them all after an edit', async ({ dir, launch }) => {
-  const file = Sheeyit.fixture(dir, 'WithChartSheet.xlsx');
+  const file = Spreadsheet.fixture(dir, 'WithChartSheet.xlsx');
   const before = parts(file);
   const s = await launch([file]);
   await expect(s.page.locator('.qa-banner')).toContainText('Pivot tables');
@@ -22,7 +22,7 @@ test('a workbook with charts, pivots and conditional formatting keeps them all a
 });
 
 test('conditional formatting and data validation are listed in the banner and kept on save', async ({ dir, launch }) => {
-  const file = Sheeyit.fixture(dir, 'ConditionalFormattingSamples.xlsx');
+  const file = Spreadsheet.fixture(dir, 'ConditionalFormattingSamples.xlsx');
   const s = await launch([file]);
   const banner = s.page.locator('.qa-banner');
   await expect(banner).toContainText('Conditional formatting');
@@ -37,7 +37,7 @@ test('conditional formatting and data validation are listed in the banner and ke
 });
 
 test('a chart sheet shows a placeholder tab instead of a grid', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, 'chart_sheet.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, 'chart_sheet.xlsx')]);
   await expect(s.page.locator('.qa-tab.active')).toHaveText('Chart1');
   await expect(s.page.locator('.qa-other-sheet')).toBeVisible();
   await expect(s.page.locator('.qa-grid')).toBeHidden();
@@ -47,13 +47,13 @@ test('a chart sheet shows a placeholder tab instead of a grid', async ({ dir, la
 });
 
 test('hidden sheets get no tab', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, 'TwoSheetsOneHidden.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, 'TwoSheetsOneHidden.xlsx')]);
   await expect(s.page.locator('.qa-tab')).toHaveText(['Sheet2']);
   await expect(await s.cellAt('A1')).toHaveText('Sheet2A1');
 });
 
 test('a hyperlinked cell shows its link, and the link can be removed', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, 'sharedhyperlink.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, 'sharedhyperlink.xlsx')]);
   await s.selectCell('A1');
   const chip = s.page.locator('.qa-link-chip');
   await expect(chip).toBeVisible();
@@ -64,14 +64,14 @@ test('a hyperlinked cell shows its link, and the link can be removed', async ({ 
 });
 
 test('a sheet with 50,000 merged ranges opens and scrolls', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, '57893-many-merges.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, '57893-many-merges.xlsx')]);
   await s.selectCell('A5000');
   await s.page.keyboard.press('ArrowDown');
   await expect(s.page.locator('.qa-name-box')).toHaveValue(/^A500\d$/);
 });
 
 test('XLOOKUP formulas from Excel compute', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, 'xlookup.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, 'xlookup.xlsx')]);
   const mismatches = await s.model<string[]>(`(app) => {
     const out = [];
     app.doc.wb.sheets.forEach((sh, si) => sh.rows.forEach((r, ri) => r && r.cells.forEach((c, ci) => {
@@ -83,7 +83,7 @@ test('XLOOKUP formulas from Excel compute', async ({ dir, launch }) => {
 });
 
 test('a hostile file is refused with a message and leaves an untitled workbook', async ({ dir, launch }) => {
-  const s = await launch([Sheeyit.fixture(dir, 'poc-xmlbomb.xlsx')]);
+  const s = await launch([Spreadsheet.fixture(dir, 'poc-xmlbomb.xlsx')]);
   await expect(s.page.locator('.qa-toast')).toContainText('Couldn’t open poc-xmlbomb.xlsx');
   await expect(s.page.locator('.qa-doc-title')).toHaveText('Untitled');
 });

@@ -25,6 +25,26 @@ function sections(code: string): string[] {
   return out;
 }
 
+const escaped = new Map<string, string>();
+
+/** Escapes bare literal characters ssf rejects (£, ¥ and other non-ASCII) outside quotes and brackets. */
+function ssfCode(code: string): string {
+  let out = escaped.get(code);
+  if (out !== undefined) return out;
+  out = '';
+  let q = false, br = false;
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '\\' && !q) { out += ch + (code[i + 1] ?? ''); i++; continue; }
+    if (ch === '"') q = !q;
+    else if (!q && ch === '[') br = true;
+    else if (!q && ch === ']') br = false;
+    out += !q && !br && ch > '\x7f' ? '\\' + ch : ch;
+  }
+  escaped.set(code, out);
+  return out;
+}
+
 const colorCache = new Map<string, (string | undefined)[]>();
 
 /** The [Color] of the section a number displays with. Conditional sections ([>100]) aren't evaluated for color. */
@@ -57,11 +77,11 @@ export function formatValue(v: Scalar, code: string, date1904 = false): Display 
   if (typeof v === 'boolean') return { text: v ? 'TRUE' : 'FALSE', align: 'center' };
   if (typeof v === 'string') {
     if (code === 'General' || code === '@' || sections(code).length < 4) return { text: v, align: 'left' };
-    return { text: SSF.format(code, v), color: sectionColor(code, v), align: 'left' };
+    return { text: SSF.format(ssfCode(code), v), color: sectionColor(code, v), align: 'left' };
   }
   if (code === 'General') return { text: generalNumber(v), align: 'right' };
   try {
-    return { text: SSF.format(code, v, { date1904 }), color: sectionColor(code, v), align: 'right' };
+    return { text: SSF.format(ssfCode(code), v, { date1904 }), color: sectionColor(code, v), align: 'right' };
   } catch {
     // A format code ssf can't handle (rare locale or Excel-only syntax): show the number plainly rather than nothing.
     return { text: generalNumber(v), align: 'right' };

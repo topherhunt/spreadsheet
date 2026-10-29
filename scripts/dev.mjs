@@ -17,7 +17,7 @@ const url = `http://localhost:${PORT}/`;
 let electron = null;
 let restarting = false;
 function launch() {
-  electron = spawn(electronPath, ['.', ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, SHEEYIT_DEV_URL: url } });
+  electron = spawn(electronPath, ['.', ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, SPREADSHEET_DEV_URL: url } });
   electron.on('exit', (code) => {
     if (restarting) { restarting = false; launch(); return; }
     shutdown(code ?? 0);

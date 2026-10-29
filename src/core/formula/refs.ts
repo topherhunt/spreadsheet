@@ -310,3 +310,14 @@ export function invalidateSheetInFormula(formula: string, sheet: string): string
 export function functionNames(formula: string): string[] {
   return tokenize(formula).filter((t): t is Extract<Token, { type: 'func' }> => t.type === 'func').map((t) => t.name);
 }
+
+/** Whether the formula spans sheets (Sheet1:Sheet3!A1), which the engine misreads as a ref to the last sheet. */
+export function has3dRef(formula: string): boolean {
+  const tokens = tokenize(formula);
+  return tokens.some((t, i) => {
+    if (t.type !== 'ref' || t.sheet === undefined) return false;
+    if (t.sheet.includes(':')) return true; // quoted: 'Jan:Mar'!A1
+    const prev = tokens[i - 1];
+    return prev?.type === 'text' && /[A-Za-z0-9_.À-￿]:$/.test(prev.text);
+  });
+}

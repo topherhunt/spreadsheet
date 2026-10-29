@@ -1,4 +1,5 @@
 import { h, icon, menu, MenuEntry, popover, popoverBelow } from './dom';
+import { dark } from '../grid/cellstyle';
 
 export type ToolAction =
   | { kind: 'undo' } | { kind: 'redo' }
@@ -47,13 +48,27 @@ const PALETTE = [
   '#5B0F00', '#660000', '#783F04', '#7F6000', '#274E13', '#0C343D', '#1C4587', '#073763', '#20124D', '#4C1130',
 ];
 
-function paletteMenu(anchor: HTMLElement, current: string | undefined, resetLabel: string, qa: string, pick: (c: string | null) => void): void {
+/** `hex` blended toward `toward` by 1 - t, as "#RRGGBB". */
+function mix(hex: string, toward: string, t: number): string {
+  const [a, b] = [hex, toward].map((c) => parseInt(c.slice(1), 16));
+  const ch = (shift: number) => Math.round(((a >> shift) & 255) * t + ((b >> shift) & 255) * (1 - t));
+  return '#' + [16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+// Deep fills that sit well on the dark theme's background (--bg), shown above the standard rows in dark mode.
+const DARK_FILLS = [0.16, 0.28, 0.42].flatMap((t) => PALETTE.slice(10, 20).map((c) => mix(c, '#1E1F22', t)));
+
+function fillPalette(): string[] {
+  return dark.matches ? [...PALETTE.slice(0, 10), ...DARK_FILLS, ...PALETTE.slice(10)] : PALETTE;
+}
+
+function paletteMenu(anchor: HTMLElement, colors: string[], current: string | undefined, resetLabel: string, qa: string, pick: (c: string | null) => void): void {
   const el = h('div', `p-2 d-flex flex-col gap-2 ${qa}`);
   const reset = h('button', 'btn w-100 qa-color-reset', el);
   reset.append(icon('slash-circle'), resetLabel);
   const grid = h('div', 'palette', el);
   let close = () => {};
-  for (const c of PALETTE) {
+  for (const c of colors) {
     const sw = h('div', `swatch qa-swatch${current?.toUpperCase() === c ? ' current' : ''}`, grid);
     sw.style.background = c;
     sw.title = c;
@@ -126,10 +141,10 @@ export class Toolbar {
     btn('italic', 'type-italic', 'Italic (⌘I)', () => act({ kind: 'italic' }));
     btn('underline', 'type-underline', 'Underline (⌘U)', () => act({ kind: 'underline' }));
     btn('strike', 'type-strikethrough', 'Strikethrough (⇧⌘X)', () => act({ kind: 'strike' }));
-    const color = btn('color', 'fonts', 'Text color', () => paletteMenu(color, this.state?.color, 'Automatic', 'qa-palette-color', (c) => act({ kind: 'color', color: c })));
+    const color = btn('color', 'fonts', 'Text color', () => paletteMenu(color, PALETTE, this.state?.color, 'Automatic', 'qa-palette-color', (c) => act({ kind: 'color', color: c })));
     color.classList.add('flex-col');
     this.colorBar = h('span', 'color-bar', color);
-    const fill = btn('fill', 'paint-bucket', 'Fill color', () => paletteMenu(fill, this.state?.fill, 'No fill', 'qa-palette-fill', (c) => act({ kind: 'fill', color: c })));
+    const fill = btn('fill', 'paint-bucket', 'Fill color', () => paletteMenu(fill, fillPalette(), this.state?.fill, 'No fill', 'qa-palette-fill', (c) => act({ kind: 'fill', color: c })));
     fill.classList.add('flex-col');
     this.fillBar = h('span', 'color-bar', fill);
     sep();
@@ -172,7 +187,7 @@ export class Toolbar {
     btn('clear-format', 'eraser', 'Clear formatting (⌘\\)', () => act({ kind: 'clearFormat' }));
     btn('filter', 'funnel', 'Create a filter (⇧⌘L)', () => act({ kind: 'filter' }));
 
-    const auto = h('button', 'btn-accent ms-auto qa-tb-auto-table', this.el);
+    const auto = h('button', 'btn-pill ms-auto qa-tb-auto-table', this.el);
     auto.title = 'Bold the header row, freeze it, and add a filter (⌥⌘T)';
     auto.append(icon('table'), 'Auto table');
     auto.addEventListener('mousedown', (e) => e.preventDefault());

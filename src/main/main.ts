@@ -10,7 +10,7 @@ const flagValue = (name: string) => process.argv.find((a) => a.startsWith(`--${n
 const headless = flag('test-headless');
 const testUserData = flagValue('test-user-data');
 if (testUserData) app.setPath('userData', testUserData);
-const devUrl = process.env.SHEEYIT_DEV_URL;
+const devUrl = process.env.SPREADSHEET_DEV_URL;
 
 const OPENABLE = /\.(xlsx|xlsm|csv|tsv|txt|tab)$/i;
 
@@ -29,7 +29,7 @@ function createWindow(file: string | null): BrowserWindow {
     width: 1280, height: 820, minWidth: 560, minHeight: 360,
     x: headless ? undefined : 80 + offset, y: headless ? undefined : 60 + offset,
     show: false,
-    title: 'Sheeyit',
+    title: 'Spreadsheet',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1f22' : '#ffffff',
     webPreferences: {
@@ -132,7 +132,7 @@ ipcMain.handle('save-dialog', async (e, defaultPath: string, format: string) => 
 
 // Write to a temp file and rename, so a failed save never leaves a half-written file.
 ipcMain.handle('write-file', (e, file: string, bytes: Uint8Array) => {
-  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.sheeyit-${process.pid}.tmp`);
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.spreadsheet-${process.pid}.tmp`);
   try {
     fs.writeFileSync(tmp, bytes);
     fs.renameSync(tmp, file);
@@ -178,7 +178,18 @@ function item(label: string, cmd: MenuCommand, accelerator?: string): MenuItemCo
 function buildMenu(): void {
   const mac = process.platform === 'darwin';
   const template: MenuItemConstructorOptions[] = [
-    ...(mac ? [{ role: 'appMenu' as const }] : []),
+    ...(mac ? [{
+      label: app.name,
+      submenu: [
+        item(`About ${app.name}`, 'about'),
+        { type: 'separator' as const },
+        { role: 'services' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const }, { role: 'hideOthers' as const }, { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const },
+      ],
+    }] : []),
     {
       label: 'File',
       submenu: [
@@ -266,6 +277,7 @@ function buildMenu(): void {
       ],
     },
     { role: 'windowMenu' },
+    ...(mac ? [] : [{ role: 'help' as const, submenu: [item(`About ${app.name}`, 'about')] }]),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

@@ -14,6 +14,7 @@ import { pxToColWidth, pxToRowHeight } from './grid/layout';
 import { mergeAt, Pos } from './grid/selection';
 import { CellEditor, editText } from './ui/editor';
 import { h, icon, menu, MenuEntry, prompt, toast } from './ui/dom';
+import { showAbout } from './ui/about';
 import { openFilterMenu } from './ui/filtermenu';
 import { FindBar } from './ui/find';
 import { ToolAction, Toolbar } from './ui/toolbar';
@@ -806,6 +807,7 @@ export class App {
         return;
       case 'clear-format': this.tool({ kind: 'clearFormat' }); return;
       case 'insert-link': return this.insertLink();
+      case 'about': return showAbout();
       case 'auto-table': this.commit(null); this.doc.autoTable(si); return;
       case 'toggle-filter': {
         this.commit(null);

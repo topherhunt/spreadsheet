@@ -4,7 +4,7 @@ import { App } from './app';
 import { toast } from './ui/dom';
 
 const app = new App(document.getElementById('app')!);
-(window as unknown as { sheeyit: App }).sheeyit = app;
+(window as unknown as { spreadsheet: App }).spreadsheet = app;
 
 /** A file that can't be read leaves the window on a new workbook, so saving can't overwrite it. */
 function load(d: InitialDoc): void {

@@ -23,7 +23,7 @@ export type MenuCommand =
   | 'freeze-none' | 'freeze-row' | 'freeze-col' | 'freeze-selection'
   | 'zoom-in' | 'zoom-out' | 'zoom-reset' | 'toggle-gridlines' | 'toggle-formulas'
   | 'insert-row-above' | 'insert-row-below' | 'insert-col-left' | 'insert-col-right' | 'delete-rows' | 'delete-cols'
-  | 'add-sheet' | 'fill-down' | 'fill-right';
+  | 'add-sheet' | 'fill-down' | 'fill-right' | 'about';
 
 export interface Api {
   initialDoc(): Promise<InitialDoc>;
@@ -45,4 +45,7 @@ export interface Api {
 
 declare global {
   interface Window { api: Api }
+  /** Set at build time by vite.config.mts. */
+  const __APP_VERSION__: string;
+  const __BUILD_COMMIT__: string;
 }

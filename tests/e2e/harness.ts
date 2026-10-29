@@ -12,7 +12,7 @@ export const ROOT = resolve(__dirname, '../..');
 export const POI = join(ROOT, 'tests/fixtures/poi');
 
 /** A running app with one window, plus a scratch directory for the files it opens and saves. */
-export class Sheeyit {
+export class Spreadsheet {
   private proc: ChildProcess;
   private exited = false;
 
@@ -21,7 +21,7 @@ export class Sheeyit {
     this.proc.once('exit', () => { this.exited = true; });
   }
 
-  static async launch(dir: string, files: string[] = [], opts: { dark?: boolean } = {}): Promise<Sheeyit> {
+  static async launch(dir: string, files: string[] = [], opts: { dark?: boolean } = {}): Promise<Spreadsheet> {
     const app = await electron.launch({
       args: [join(ROOT, 'dist/main/main.cjs'), '--test-headless', `--test-user-data=${join(dir, '.profile')}`, ...files],
       cwd: ROOT,
@@ -31,8 +31,8 @@ export class Sheeyit {
     try {
       const page = await app.firstWindow();
       await page.locator('.qa-grid').waitFor({ state: 'attached' });
-      await page.waitForFunction(() => !!(window as any).sheeyit?.doc);
-      const s = new Sheeyit(app, page, dir);
+      await page.waitForFunction(() => !!(window as any).spreadsheet?.doc);
+      const s = new Spreadsheet(app, page, dir);
       await s.stubDialogs();
       return s;
     } catch (e) {
@@ -152,7 +152,7 @@ export class Sheeyit {
   /** Data from the in-memory model, for checks the grid can't show (formulas, styles). */
   async model<T>(fn: string, arg?: unknown): Promise<T> {
     return this.page.evaluate(([src, a]) => {
-      const app = (window as any).sheeyit;
+      const app = (window as any).spreadsheet;
       return new Function('app', 'arg', `return (${src})(app, arg)`)(app, a);
     }, [fn, arg] as const) as Promise<T>;
   }
@@ -195,17 +195,17 @@ export function readBack(path: string): Workbook {
   return readWorkbook(new Uint8Array(readFileSync(path)), formatOf(path));
 }
 
-export const test = base.extend<{ dir: string; launch: (files?: string[], opts?: { dark?: boolean }) => Promise<Sheeyit> }>({
+export const test = base.extend<{ dir: string; launch: (files?: string[], opts?: { dark?: boolean }) => Promise<Spreadsheet> }>({
   dir: async ({}, use) => {
-    const dir = mkdtempSync(join(tmpdir(), 'sheeyit-e2e-'));
+    const dir = mkdtempSync(join(tmpdir(), 'spreadsheet-e2e-'));
     await use(dir);
     rmSync(dir, { recursive: true, force: true });
   },
   /** Starts the app; every app a test starts is ended afterwards, pass or fail. */
   launch: async ({ dir }, use) => {
-    const apps: Sheeyit[] = [];
+    const apps: Spreadsheet[] = [];
     await use(async (files = [], opts = {}) => {
-      const s = await Sheeyit.launch(dir, files, opts);
+      const s = await Spreadsheet.launch(dir, files, opts);
       apps.push(s);
       return s;
     });
