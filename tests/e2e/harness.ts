@@ -168,6 +168,43 @@ export class Spreadsheet {
     }`, ref);
   }
 
+  /** Where a cell (0-based) is drawn, in page coordinates. */
+  async center(row: number, col: number): Promise<{ x: number; y: number }> {
+    return this.model(`(app, [r, c]) => { const b = app.grid.cellRect(r, c); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }`, [row, col]);
+  }
+
+  /** Scrolls the grid with the mouse wheel, as a user would, and waits until it has moved. */
+  async wheel(dx: number, dy: number): Promise<void> {
+    const scroller = this.page.locator('.qa-grid-scroll');
+    const before = await scroller.evaluate((el) => [el.scrollLeft, el.scrollTop]);
+    const b = (await this.page.locator('.qa-grid').boundingBox())!;
+    await this.page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await this.page.mouse.wheel(dx, dy);
+    await expect.poll(() => scroller.evaluate((el, [l, t]) => (el.scrollLeft !== l || el.scrollTop !== t), before)).toBe(true);
+  }
+
+  /** The 0-based row whose header is drawn nearest the middle of the grid. */
+  async middleRow(): Promise<number> {
+    return this.page.evaluate(() => {
+      const g = document.querySelector('.qa-grid')!.getBoundingClientRect();
+      const mid = g.top + g.height / 2;
+      const hdr = [...document.querySelectorAll<HTMLElement>('.qa-row-headers .pane-content > div')].find((el) => { const r = el.getBoundingClientRect(); return r.top <= mid && r.bottom > mid; })!;
+      return Number(hdr.textContent) - 1;
+    });
+  }
+
+  /** The 0-based column whose header is drawn nearest the middle of the grid. */
+  async middleCol(): Promise<number> {
+    return this.page.evaluate(() => {
+      const g = document.querySelector('.qa-grid')!.getBoundingClientRect();
+      const mid = g.left + g.width / 2;
+      const hdr = [...document.querySelectorAll<HTMLElement>('.qa-col-headers .pane-content > div')].find((el) => { const r = el.getBoundingClientRect(); return r.left <= mid && r.right > mid; })!;
+      let col = 0;
+      for (const ch of hdr.textContent!) col = col * 26 + ch.charCodeAt(0) - 64;
+      return col - 1;
+    });
+  }
+
   /** Filter buttons are drawn under the grid's scroll layer, which hit-tests clicks by position. */
   async openFilter(col: number): Promise<void> {
     await this.page.locator(`.qa-filter-btn-${col}`).click({ force: true });

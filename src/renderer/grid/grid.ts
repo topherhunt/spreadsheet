@@ -106,7 +106,7 @@ export class Grid {
     this.corner = h('div', 'corner qa-corner', this.el);
     this.freezeV = h('div', 'freeze-line-v', this.el);
     this.freezeH = h('div', 'freeze-line-h', this.el);
-    this.scroller = h('div', 'grid-scroll', this.el);
+    this.scroller = h('div', 'grid-scroll qa-grid-scroll', this.el);
     this.spacer = h('div', 'grid-spacer', this.scroller);
     this.sel = new Selection(() => this.sheet);
 
@@ -503,8 +503,10 @@ export class Grid {
     return sx >= b.l - 2 && sx <= b.l + FILTER_BTN + 2 && sy >= b.t - 2 && sy <= b.t + FILTER_BTN + 2 ? col : null;
   }
 
+  /** Measured from the scroller's box: `offsetX/Y` are relative to the spacer under the pointer, so they include the scroll offset. */
   private overScrollbar(e: MouseEvent): boolean {
-    return e.offsetX >= this.scroller.clientWidth || e.offsetY >= this.scroller.clientHeight;
+    const r = this.scroller.getBoundingClientRect();
+    return e.clientX - r.left >= this.scroller.clientWidth || e.clientY - r.top >= this.scroller.clientHeight;
   }
 
   private updateCursor(e: MouseEvent): void {
