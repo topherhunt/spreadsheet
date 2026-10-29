@@ -1,0 +1,37 @@
+name: Windows Tests
+
+# Manually triggered run of the full Playwright E2E suite on Windows, to catch
+# Windows-only breakage (paths, line endings, launch behavior) that local macOS
+# runs can't surface. Trigger from the Actions tab ("Run workflow").
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      # Builds dist/, which the tests launch.
+      - run: npm run build
+
+      - run: npx vitest run
+
+      # retain-on-failure keeps a trace for each failing test, since these can't be reproduced on macOS.
+      - run: npx playwright test --trace=retain-on-failure
+
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-traces
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

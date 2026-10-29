@@ -1,0 +1,116 @@
+{
+  "name": "sheeyit",
+  "productName": "Sheeyit",
+  "version": "0.1.0",
+  "description": "A fast, offline spreadsheet viewer and editor for CSV, TSV and XLSX",
+  "main": "dist/main/main.cjs",
+  "private": true,
+  "engines": {
+    "node": ">=26 <27"
+  },
+  "scripts": {
+    "start": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "release": "node scripts/build.mjs && electron-builder --publish never",
+    "typecheck": "tsc --noEmit",
+    "pretest": "node scripts/build.mjs",
+    "test": "vitest run && playwright test",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "author": {
+    "name": "Topher Hunt",
+    "email": "4580894+topherhunt@users.noreply.github.com"
+  },
+  "license": "GPL-3.0-or-later",
+  "build": {
+    "appId": "com.topherhunt.sheeyit",
+    "productName": "Sheeyit",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "afterSign": "./scripts/verify-signature.cjs",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
+    "fileAssociations": [
+      {
+        "ext": "xlsx",
+        "name": "Excel Workbook",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "xlsm",
+        "name": "Excel Macro-Enabled Workbook",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "csv",
+        "name": "CSV Document",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "tsv",
+        "name": "TSV Document",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ],
+    "mac": {
+      "target": {
+        "target": "dmg",
+        "arch": "arm64"
+      },
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "electronLanguages": [
+        "en"
+      ]
+    },
+    "dmg": {
+      "artifactName": "Sheeyit-${version}-arm64.dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "artifactName": "Sheeyit-${version}-Windows-Setup.exe"
+    }
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
+    "fflate": "^0.8.3",
+    "hyperformula": "^3.5.0",
+    "papaparse": "^5.7.0",
+    "ssf": "^0.11.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.6",
+    "@types/papaparse": "^5.5.2",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "fsevents": false
+  }
+}

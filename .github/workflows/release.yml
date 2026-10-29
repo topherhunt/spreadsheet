@@ -1,0 +1,40 @@
+name: Build
+
+# Run manually from the Actions tab to check that the macOS .dmg and Windows installer
+# build on clean runners. Releases are cut locally with scripts/release.sh; there is
+# deliberately no tag trigger, since that script's tag would start a competing build.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false # a failure on one OS shouldn't cancel the other
+      matrix:
+        include:
+          # macos-latest runners are arm64, matching the arm64-only .dmg.
+          - os: macos-latest
+            assets: release/*.dmg
+          - os: windows-latest
+            assets: release/*.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx vitest run
+
+      # Signs the .app ad-hoc; scripts/verify-signature.cjs fails the build if the signature doesn't seal the bundle.
+      - run: npm run release
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dist-${{ matrix.os }}
+          path: ${{ matrix.assets }}
+          if-no-files-found: error
