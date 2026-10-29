@@ -1,6 +1,6 @@
 # Spreadsheet
 
-A fast, fully offline spreadsheet app for macOS (and Windows) that opens and edits CSV, TSV, XLSX and XLSM files and feels like Google Sheets.
+A fast, fully offline spreadsheet app for macOS that opens and edits CSV, TSV, XLSX and XLSM files and feels like Google Sheets.
 
 ![Spreadsheet showing a workbook in dark mode](docs/screenshot.jpg)
 
