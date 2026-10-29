@@ -9,6 +9,7 @@ Electron app: `src/main` (window, menus, file dialogs, IPC; bundled by esbuild t
 - `core/formula/engine.ts` mirrors the model into HyperFormula, which supplies values only. The model stays the source of truth for formulas. Formulas HyperFormula can't evaluate are `frozen` and keep the file's cached value. Extra functions are in `formula/functions.ts`.
 - `core/formula/refs.ts` tokenizes formulas just enough to move references, and leaves every other byte alone. All reference rewriting (copy, fill, insert/delete, rename, cut/paste) goes through `rewriteRefs`.
 - `core/xlsx/read.ts` and `write.ts`: untouched sheets (`pristine`) and every part the app doesn't model are written back byte-identical. Unsupported features are recorded in `features` so the banner can list them. XML with a DOCTYPE is refused.
+- `core/xlsx/follow.ts`: unmodeled parts (tables, comments, drawings, charts, pivots, conditional formatting, data validation) follow row/column inserts and deletes and sheet renames. `wb.edits` logs those edits since the file was read; every save rebuilds the affected parts from the bytes as read (`src.original`) by replaying the log, so undo across a save is exact. Sheet XML is likewise always patched from the XML as read.
 - `core/csv.ts` keeps the raw text of cells it parsed as numbers, dates or booleans (`raw`), so untouched cells save exactly as read (`007`, `1200.50`).
 
 ## Renderer

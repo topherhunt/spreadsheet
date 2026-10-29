@@ -15,8 +15,10 @@ export interface Rel { id: string; type: string; target: string; external: boole
 export interface SstEntry { text: string; runs?: Run[] }
 
 export interface XlsxSource {
-  /** Every part of the original package, byte-for-byte. */
+  /** Every part of the package as last saved (as read, until the first save). */
   files: Map<string, Uint8Array>;
+  /** The package as read. Parts that follow row/column edits are rebuilt from it on every save. */
+  original: Map<string, Uint8Array>;
   workbookPath: string;
   workbookDoc: XDoc;
   workbookRels: Rel[];
@@ -630,8 +632,8 @@ export function readXlsx(bytes: Uint8Array, format: 'xlsx' | 'xlsm' = 'xlsx'): W
 
   const wb: Workbook = {
     sheets: [], styles, definedNames: [], date1904, activeSheet: 0, format,
-    features, unsupportedFunctions: new Set(), viewStyles: new Set(),
-    src: { files, workbookPath, workbookDoc, workbookRels, sst, sstPath: sstRel?.target, stylesPath: stylesRel?.target },
+    features, unsupportedFunctions: new Set(), viewStyles: new Set(), edits: [],
+    src: { files, original: new Map(files), workbookPath, workbookDoc, workbookRels, sst, sstPath: sstRel?.target, stylesPath: stylesRel?.target },
   };
 
   const sheetsEl = firstChild(wbRoot, 'sheets');

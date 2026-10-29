@@ -6,6 +6,7 @@ import { parseRels, partDir, relsPathFor, snapshotSheet, SstEntry, XlsxSource } 
 import {
   attrsToXml, childElements, createLike, escapeXml, firstChild, insertInOrder, localName, parseXml, serializeXml, XDoc, XEl,
 } from './xml';
+import { dropDeletedTables, followParts, followSheetXml } from './follow';
 
 // Saving patches the original package: every part we don't model is copied
 // through untouched, untouched sheets keep their exact bytes, and modified
@@ -161,7 +162,7 @@ function blankPackage(macro: boolean): XlsxSource {
   files.set('_rels/.rels', x(`<Relationships xmlns="${NS_PKG_REL}"><Relationship Id="rId1" Type="${NS_REL_DOC}/officeDocument" Target="xl/workbook.xml"/></Relationships>`));
   const wbXml = `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_REL_DOC}"><bookViews><workbookView/></bookViews><sheets/><calcPr calcId="191029"/></workbook>`;
   files.set('xl/workbook.xml', x(wbXml));
-  return { files, workbookPath: 'xl/workbook.xml', workbookDoc: parseXml(wbXml), workbookRels: [], sst: [] };
+  return { files, original: new Map(), workbookPath: 'xl/workbook.xml', workbookDoc: parseXml(wbXml), workbookRels: [], sst: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -517,9 +518,17 @@ function writeDimension(root: XEl, sheet: Sheet): void {
   replaceChild(root, 'dimension', (el) => el.setAttribute('ref', ref), WORKSHEET_ORDER);
 }
 
-function writeSheet(pkg: Pkg, sheet: Sheet, path: string, sst: SstWriter): void {
+function writeSheet(pkg: Pkg, wb: Workbook, sheet: Sheet, path: string, sst: SstWriter): void {
   const doc = sheet.src?.doc ? (sheet.src.doc.cloneNode(true) as XDoc) : parseXml(NEW_SHEET_XML);
   const root = doc.documentElement as unknown as XEl;
+  // The sheet is rebuilt from its XML as read, so its relationships start from the file as read too.
+  const rels = relsPathFor(path);
+  const readRels = sheet.src?.doc ? wb.src!.original.get(rels) : undefined;
+  if (readRels) pkg.setText(rels, strFromU8(readRels)); else pkg.remove(rels);
+  if (sheet.src?.doc) {
+    followSheetXml(root, wb, path);
+    dropDeletedTables(root, wb, sheet, (id) => pkg.removeRels(path, (_t, rid) => rid === id));
+  }
   const loaded = sheet.src?.loaded ?? {};
   const now = snapshotSheet(sheet);
   writeDimension(root, sheet);
@@ -628,7 +637,7 @@ export function writeXlsx(wb: Workbook): Uint8Array {
         changed = true;
       }
       newSheetEls.push(el);
-      if (sheet.kind === 'worksheet' && !sheet.pristine) { writeSheet(pkg, sheet, sheet.src.path, sst); changed = true; }
+      if (sheet.kind === 'worksheet' && !sheet.pristine) { writeSheet(pkg, wb, sheet, sheet.src.path, sst); changed = true; }
     } else {
       const path = nextSheetPath(pkg);
       const relId = pkg.addRel(src.workbookPath, 'worksheet', path);
@@ -640,7 +649,7 @@ export function writeXlsx(wb: Workbook): Uint8Array {
       const rp = relPrefix(wbRoot);
       el.setAttributeNS(wbRoot.lookupNamespaceURI(rp) ?? NS_REL_DOC, `${rp}:id`, relId);
       newSheetEls.push(el);
-      writeSheet(pkg, sheet, path, sst);
+      writeSheet(pkg, wb, sheet, path, sst);
       sheet.src = { path, relId, sheetId: String(maxSheetId), rels: [], loaded: {}, links: new Map() };
       changed = true;
     }
@@ -663,6 +672,8 @@ export function writeXlsx(wb: Workbook): Uint8Array {
     for (const el of newSheetEls) sheetsEl.appendChild(el);
     changed = true;
   }
+
+  followParts(pkg, wb);
 
   const names = namesToWrite(wb);
   if (nameKey(names) !== originalNames(wbRoot)) { writeDefinedNames(wbRoot, names); changed = true; }
@@ -710,27 +721,11 @@ export function writeXlsx(wb: Workbook): Uint8Array {
   // Saving makes this output the new baseline for the next save.
   wb.src = { ...src, files: pkg.files, workbookDoc: parseXml(strFromU8(pkg.files.get(src.workbookPath)!)), sst: [...src.sst, ...sst.added] };
   wb.src.workbookRels = parseRels(pkg.files, src.workbookPath);
-  for (const s of wb.sheets) {
-    if (s.kind === 'worksheet' && !s.pristine) rebaseSheet(pkg, s);
-    s.pristine = true;
-  }
+  for (const s of wb.sheets) s.pristine = true;
   wb.styles.loaded = {
     fonts: wb.styles.fonts.length, fills: wb.styles.fills.length, borders: wb.styles.borders.length, xfs: wb.styles.xfs.length,
     numFmtIds: new Set(wb.styles.numFmts.keys()),
   };
   if (src.stylesPath) wb.styles.doc = parseXml(strFromU8(pkg.files.get(src.stylesPath)!));
   return bytes;
-}
-
-/** After a save, the written sheet becomes the source the next save patches. */
-function rebaseSheet(pkg: Pkg, sheet: Sheet): void {
-  const src = sheet.src!;
-  const xml = strFromU8(pkg.files.get(src.path)!);
-  const m = /<(\w+:)?sheetData\b[^>]*?(\/>|>[\s\S]*?<\/(\w+:)?sheetData>)/.exec(xml);
-  if (!m) throw new Error(`Saved sheet ${sheet.name} has no <sheetData>`);
-  const p = m[1] ?? '';
-  src.doc = parseXml(xml.slice(0, m.index) + `<${p}sheetData/>` + xml.slice(m.index + m[0].length));
-  src.rels = parseRels(pkg.files, src.path);
-  src.links = new Map([...cellLinks(sheet)].map(([ref, target]) => [ref, { target, attrs: {} }]));
-  src.loaded = snapshotSheet(sheet);
 }

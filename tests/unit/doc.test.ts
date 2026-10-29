@@ -4,7 +4,7 @@ import { newWorkbook, readDelimited, writeDelimited } from '../../src/core/csv';
 import { Doc } from '../../src/core/doc';
 import { columnValues, compareValues, dataRegion } from '../../src/core/filter';
 import { parseTyped } from '../../src/core/input';
-import { getCell, Workbook } from '../../src/core/model';
+import { getCell, sheetExtent, Workbook } from '../../src/core/model';
 import { cellFormat, displayCell } from '../../src/core/numfmt';
 import { shiftSpan } from '../../src/core/structure';
 import { readXlsx } from '../../src/core/xlsx/read';
@@ -294,5 +294,11 @@ describe('delimited files', () => {
   it.each([['csv', 'a, b, 12\n"x,y","say ""hi""",3\n'], ['tsv', 'a\t b \t12\n']] as const)('an untouched %s saves exactly as read', (format, text) => {
     const wb = readDelimited(text, format);
     expect(writeDelimited(wb, format, (c) => displayCell(wb, c).text)).toBe(text);
+  });
+
+  it('drops trailing rows and columns that are empty or only whitespace', () => {
+    const wb = readDelimited('a,b,  ,\n1, 2,,\n  ,  \n,\n \n\n', 'csv');
+    expect(sheetExtent(wb.sheets[0])).toEqual({ rows: 2, cols: 2 });
+    expect(writeDelimited(wb, 'csv', (c) => displayCell(wb, c).text)).toBe('a,b\n1, 2\n');
   });
 });

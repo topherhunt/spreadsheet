@@ -345,10 +345,11 @@ export class Doc {
 
   /** Runs `fn` on one sheet (or the whole workbook with sheet -1), recording a snapshot-based undo step. */
   private snapshotStep(label: string, sheet: number, kind: ChangeKind, recalc: boolean, fn: () => void): void {
-    const take = (): { sheets: Sheet[]; names: Workbook['definedNames']; active: number } => ({
+    const take = (): { sheets: Sheet[]; names: Workbook['definedNames']; active: number; edits: Workbook['edits'] } => ({
       sheets: sheet < 0 ? this.wb.sheets.map(cloneSheetState) : [cloneSheetState(this.wb.sheets[sheet])],
       names: structuredClone(this.wb.definedNames),
       active: this.wb.activeSheet,
+      edits: [...this.wb.edits],
     });
     const restore = (snap: ReturnType<typeof take>) => {
       if (sheet < 0) this.wb.sheets = snap.sheets.map(cloneSheetState);
@@ -356,6 +357,7 @@ export class Doc {
       for (const s of this.wb.sheets) s.pristine = false;
       this.wb.definedNames = structuredClone(snap.names);
       this.wb.activeSheet = snap.active;
+      this.wb.edits = [...snap.edits];
       if (recalc) this.engine.rebuild();
     };
     const before = take();

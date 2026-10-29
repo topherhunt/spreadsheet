@@ -5,7 +5,7 @@ import { emptyStyleSheet } from './styles';
 export function newWorkbook(format: Workbook['format'] = 'xlsx'): Workbook {
   return {
     sheets: [newSheet('Sheet1')], styles: emptyStyleSheet(), definedNames: [], date1904: false, activeSheet: 0, format,
-    features: new Set(), unsupportedFunctions: new Set(), viewStyles: new Set(),
+    features: new Set(), unsupportedFunctions: new Set(), viewStyles: new Set(), edits: [],
   };
 }
 
@@ -46,6 +46,11 @@ export function readDelimited(text: string, format: 'csv' | 'tsv'): Workbook {
   const rows = parsed.data;
   // Papaparse reports a trailing newline as one empty final row.
   if (rows.length && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === '') rows.pop();
+  // Trailing rows and columns holding only empty or whitespace fields are not part of the sheet.
+  const blank = (s: string) => s.trim() === '';
+  while (rows.length && rows[rows.length - 1].every(blank)) rows.pop();
+  const width = rows.reduce((w, fields) => Math.max(w, fields.findLastIndex((s) => !blank(s)) + 1), 0);
+  for (let i = 0; i < rows.length; i++) rows[i] = rows[i].slice(0, width);
 
   const wb = newWorkbook(format);
   wb.csv = { delimiter: parsed.meta.delimiter, newline: parsed.meta.linebreak || '\n', bom };

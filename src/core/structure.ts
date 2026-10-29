@@ -1,6 +1,7 @@
 import { MAX_COLS, MAX_ROWS, parseRange, Range, rangeToA1 } from './addr';
 import { renameSheetInFormula, invalidateSheetInFormula, shiftFormula, StructuralChange } from './formula/refs';
 import { Cell, newSheet, Sheet, Workbook } from './model';
+import { checkShift, tablesOf } from './xlsx/follow';
 
 // Row/column insertion and deletion, and sheet add/rename/delete/move, applied
 // to the model. Formulas everywhere in the workbook follow the change. The
@@ -49,6 +50,8 @@ export function shiftCells(wb: Workbook, si: number, axis: 'row' | 'col', at: nu
     if (pushedOff) throw new Error(`Can’t insert ${axis === 'row' ? 'rows' : 'columns'}: that would push cells off the end of the sheet.`);
   }
   const change: StructuralChange = { sheet: sheet.name, axis, at, count };
+  checkShift(wb, sheet, change);
+  wb.edits.push({ kind: 'shift', path: sheet.src?.doc ? sheet.src.path : undefined, change });
   eachFormulaCell(wb, (c, s) => { c.f = shiftFormula(c.f!, s.name, change); });
   for (const s of wb.sheets) for (const r of s.rows) if (r) for (const c of r.cells) {
     if (c?.link?.startsWith('#')) c.link = '#' + shiftFormula(c.link.slice(1), s.name, change);
@@ -92,13 +95,30 @@ export function shiftCells(wb: Workbook, si: number, axis: 'row' | 'col', at: nu
     const scope = n.localSheet !== undefined ? wb.sheets[n.localSheet].name : sheet.name;
     n.ref = shiftFormula(n.ref, scope, change);
   }
+
+  // A table column's header cell holds its name, so columns inserted into a table get theirs written in.
+  if (axis === 'col' && count > 0) for (const { table } of tablesOf(wb, sheet)) {
+    if (!table?.header) continue;
+    table.columns.forEach((col, i) => {
+      const x = table.ref.c1 + i;
+      if (col.src !== undefined || x < at || x >= at + count) return;
+      const row = sheet.rows[table.ref.r1] ?? (sheet.rows[table.ref.r1] = { cells: [] });
+      const cell = row.cells[x];
+      if (cell?.v === undefined || cell.v === null || cell.v === '') row.cells[x] = { ...cell, v: col.name };
+    });
+  }
   sheet.pristine = false;
   markFormulaSheetsChanged(wb);
 }
 
+const FOLLOWED_FEATURES = ['Conditional formatting', 'Data validation', 'Sparklines'];
+
 function markFormulaSheetsChanged(wb: Workbook): void {
-  // A shifted formula elsewhere makes that sheet's XML stale too.
-  for (const s of wb.sheets) if (s.kind === 'worksheet' && s.rows.some((r) => r?.cells.some((c) => c?.f))) s.pristine = false;
+  // A shifted formula elsewhere makes that sheet's XML stale too, including formulas in its conditional formats and validations.
+  for (const s of wb.sheets) {
+    if (s.kind !== 'worksheet') continue;
+    if (s.rows.some((r) => r?.cells.some((c) => c?.f)) || FOLLOWED_FEATURES.some((f) => s.features.has(f))) s.pristine = false;
+  }
 }
 
 export function uniqueSheetName(wb: Workbook, base: string): string {
@@ -133,6 +153,7 @@ export function renameSheet(wb: Workbook, si: number, name: string): void {
   }
   wb.sheets[si].name = name;
   wb.sheets[si].pristine = false;
+  wb.edits.push({ kind: 'rename', from: old, to: name });
   markFormulaSheetsChanged(wb);
 }
 
@@ -140,6 +161,7 @@ export function deleteSheet(wb: Workbook, si: number): void {
   if (wb.sheets.filter((s) => s.state === 'visible').length <= 1 && wb.sheets[si].state === 'visible') throw new Error('A workbook needs at least one visible sheet.');
   const name = wb.sheets[si].name;
   wb.sheets.splice(si, 1);
+  wb.edits.push({ kind: 'drop', name });
   eachFormulaCell(wb, (c) => { c.f = invalidateSheetInFormula(c.f!, name); });
   wb.definedNames = wb.definedNames.filter((n) => n.localSheet !== si);
   for (const n of wb.definedNames) {

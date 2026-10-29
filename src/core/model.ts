@@ -1,4 +1,5 @@
 import type { Range } from './addr';
+import type { StructuralChange } from './formula/refs';
 import type { StyleSheet } from './styles';
 import type { XlsxSource, SheetSource } from './xlsx/read';
 
@@ -127,6 +128,12 @@ export interface DefinedName {
 
 export type FileFormat = 'xlsx' | 'xlsm' | 'csv' | 'tsv';
 
+/** A row/column or sheet edit, replayed on save onto the file parts the model doesn't hold (tables, comments, drawings...). */
+export type SheetEdit =
+  | { kind: 'shift'; /** Part path of the edited sheet, when it came from the file. */ path?: string; change: StructuralChange }
+  | { kind: 'rename'; from: string; to: string }
+  | { kind: 'drop'; name: string };
+
 export interface Workbook {
   sheets: Sheet[];
   styles: StyleSheet;
@@ -145,6 +152,8 @@ export interface Workbook {
   csv?: { delimiter: string; newline: string; bom: boolean };
   /** Styles applied as view setup (the auto-table header), which don't make a CSV need XLSX. */
   viewStyles: Set<number>;
+  /** Row/column and sheet edits since the file was read, in order. */
+  edits: SheetEdit[];
 }
 
 export function newSheet(name: string): Sheet {
