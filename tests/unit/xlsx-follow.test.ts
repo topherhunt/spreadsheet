@@ -83,6 +83,20 @@ describe('comments and notes follow row and column edits', () => {
     expect([...vml.matchAll(/<x:Row>(\d+)<\/x:Row>/g)].map((m) => m[1])).toEqual(['0', '1']);
   });
 
+  it('deleting a column to the left of comments moves them and their note boxes left with their cells', () => {
+    const d = open('SimpleWithComments.xlsx');
+    d.insertCols(0, 0, -1);
+    const files = save(d);
+    const comments = all(root(files, 'xl/comments1.xml'), 'comment');
+    expect(comments.map((c) => c.getAttribute('ref'))).toEqual(['A1', 'A2', 'A3']);
+    expect(comments[0].textContent).toContain('first cell');
+    const vml = text(files['xl/drawings/vmlDrawing1.vml']);
+    expect([...vml.matchAll(/<x:Column>(\d+)<\/x:Column>/g)].map((m) => m[1])).toEqual(['0', '0', '0']);
+    expect(vml).toContain('<x:Anchor>1, 15, 0, 2, 3, 15, 4, 8</x:Anchor>');
+    const back = readXlsx(writeXlsx(d.wb));
+    expect(back.sheets[0].features.has('Notes/comments')).toBe(true);
+  });
+
   it('inserting a column moves comments and their note boxes right', () => {
     const d = open('SimpleWithComments.xlsx');
     d.insertCols(0, 0, 1);
