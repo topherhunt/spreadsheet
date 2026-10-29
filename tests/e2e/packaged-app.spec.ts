@@ -50,7 +50,9 @@ test.describe('packaged app', () => {
       await expect(page.locator('.qa-doc-title')).toHaveText(/people/);
       await expect(page.locator('.qa-grid [data-rc="1:0"]')).toHaveText('Ann');
     } finally {
+      const exited = new Promise((r) => proc.once('exit', r));
       proc.kill('SIGKILL');
+      await exited;
     }
   });
 });

@@ -177,5 +177,5 @@ test('freezing at a cell near the top-left still works', async ({ launch }) => {
   const at = await s.center(2, 1);
   await s.page.mouse.click(at.x, at.y);
   await s.command('freeze-selection');
-  expect(await s.model<{ rows: number; cols: number }>('(app) => app.sheet.freeze')).toEqual({ rows: 2, cols: 1 });
+  await expect.poll(() => s.model<{ rows: number; cols: number }>('(app) => app.sheet.freeze')).toEqual({ rows: 2, cols: 1 });
 });

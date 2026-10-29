@@ -236,7 +236,8 @@ export const test = base.extend<{ dir: string; launch: (files?: string[], opts?:
   dir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'spreadsheet-e2e-'));
     await use(dir);
-    rmSync(dir, { recursive: true, force: true });
+    // A killed app's helper processes can still write to its profile here for a moment.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   },
   /** Starts the app; every app a test starts is ended afterwards, pass or fail. */
   launch: async ({ dir }, use) => {
