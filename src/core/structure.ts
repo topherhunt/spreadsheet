@@ -1,4 +1,4 @@
-import { parseRange, Range, rangeToA1 } from './addr';
+import { MAX_COLS, MAX_ROWS, parseRange, Range, rangeToA1 } from './addr';
 import { renameSheetInFormula, invalidateSheetInFormula, shiftFormula, StructuralChange } from './formula/refs';
 import { Cell, newSheet, Sheet, Workbook } from './model';
 
@@ -44,8 +44,15 @@ function shiftArray<T>(arr: (T | undefined)[], at: number, count: number): (T | 
 /** Inserts (count > 0) or deletes (count < 0) rows or columns starting at `at`. */
 export function shiftCells(wb: Workbook, si: number, axis: 'row' | 'col', at: number, count: number): void {
   const sheet = wb.sheets[si];
+  if (count > 0) {
+    const pushedOff = axis === 'row' ? sheet.rows.length > MAX_ROWS - count : sheet.cols.length > MAX_COLS - count || sheet.rows.some((r) => r && r.cells.length > MAX_COLS - count);
+    if (pushedOff) throw new Error(`Can’t insert ${axis === 'row' ? 'rows' : 'columns'}: that would push cells off the end of the sheet.`);
+  }
   const change: StructuralChange = { sheet: sheet.name, axis, at, count };
   eachFormulaCell(wb, (c, s) => { c.f = shiftFormula(c.f!, s.name, change); });
+  for (const s of wb.sheets) for (const r of s.rows) if (r) for (const c of r.cells) {
+    if (c?.link?.startsWith('#')) c.link = '#' + shiftFormula(c.link.slice(1), s.name, change);
+  }
 
   if (axis === 'row') sheet.rows = shiftArray(sheet.rows, at, count);
   else {

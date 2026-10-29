@@ -1,5 +1,5 @@
-import { DetailedCellError, EmptyValue, ExportedCellChange, HyperFormula, type CellValue, type RawCellContent } from 'hyperformula';
-import { inRange, MAX_COLS, MAX_ROWS, parseRange, rangeToA1 } from '../addr';
+import { DenseSparseChooseBasedOnThreshold, DetailedCellError, EmptyValue, ExportedCellChange, HyperFormula, type CellValue, type RawCellContent } from 'hyperformula';
+import { inRange, MAX_COLS, MAX_ROWS, parseRange, Range, rangeToA1 } from '../addr';
 import { Cell, getCell, isError, Scalar, setCell, Sheet, Workbook } from '../model';
 import { displayFormula } from './xlfn';
 import { functionNames, has3dRef } from './refs';
@@ -22,6 +22,25 @@ function cellInput(c: Cell | undefined): RawCellContent {
   if (!c || c.spill) return null;
   if (c.f && !c.frozen) return '=' + displayFormula(c.f);
   return valueInput(c.v);
+}
+
+interface Write { sheet: number; row: number; col: number; input: RawCellContent }
+
+/** Joins single-cell writes into vertical or horizontal runs, whichever needs fewer: a batch's cost grows with its number of calls, not cells. */
+function runs(writes: Write[]): { sheet: number; row: number; col: number; content: RawCellContent[][] }[] {
+  const group = (vertical: boolean) => {
+    const sorted = [...writes].sort((a, b) => a.sheet - b.sheet || (vertical ? a.col - b.col || a.row - b.row : a.row - b.row || a.col - b.col));
+    const out: { sheet: number; row: number; col: number; content: RawCellContent[][] }[] = [];
+    for (const w of sorted) {
+      const last = out[out.length - 1];
+      if (last && last.sheet === w.sheet && (vertical ? last.col === w.col && last.row + last.content.length === w.row : last.row === w.row && last.col + last.content[0].length === w.col)) {
+        if (vertical) last.content.push([w.input]); else last.content[0].push(w.input);
+      } else out.push({ sheet: w.sheet, row: w.row, col: w.col, content: [[w.input]] });
+    }
+    return out;
+  };
+  const v = group(true), h = group(false);
+  return v.length <= h.length ? v : h;
 }
 
 function fromEngine(v: CellValue): Scalar {
@@ -92,6 +111,9 @@ export class Engine {
       useArrayArithmetic: true,
       evaluateNullToZero: true,
       useColumnIndex: true,
+      undoLimit: 0,
+      // The default dense mapping allocates rows x columns of the used area, so one far-off cell can exhaust memory; sparse is used below 80% fill.
+      chooseAddressMappingPolicy: new DenseSparseChooseBasedOnThreshold(0.8),
       ignoreWhiteSpace: 'any',
       // Excel's 1900 system counts a nonexistent Feb 29, 1900; serials from March 1900 on are the same either way.
       nullDate: wb.date1904 ? { year: 1904, month: 1, day: 1 } : { year: 1899, month: 12, day: 31 },
@@ -179,16 +201,19 @@ export class Engine {
 
   /** Writes cells into the model and the engine, then copies recalculated values back. */
   apply(edits: CellEdit[]): Changed[] {
-    const changes = this.hf.batch(() => {
-      for (const e of edits) {
-        const sheet = this.wb.sheets[e.sheet];
-        setCell(sheet, e.row, e.col, e.cell);
-        sheet.pristine = false;
-        const id = this.ids.get(e.sheet);
-        if (id === undefined) throw new Error(`Sheet ${sheet.name} isn't a worksheet`);
-        this.hf.setCellContents({ sheet: id, row: e.row, col: e.col }, [[cellInput(e.cell)]]);
-      }
-    });
+    const writes = new Map<string, Write>();
+    for (const e of edits) {
+      const sheet = this.wb.sheets[e.sheet];
+      const id = this.ids.get(e.sheet);
+      if (id === undefined) throw new Error(`Sheet ${sheet.name} isn't a worksheet`);
+      const before = cellInput(getCell(sheet, e.row, e.col));
+      setCell(sheet, e.row, e.col, e.cell);
+      sheet.pristine = false;
+      const input = cellInput(e.cell);
+      // Style-only edits leave the engine's input alone.
+      if (input !== before || writes.has(`${id}:${e.row}:${e.col}`)) writes.set(`${id}:${e.row}:${e.col}`, { sheet: id, row: e.row, col: e.col, input });
+    }
+    const changes = writes.size ? this.hf.batch(() => { for (const r of runs([...writes.values()])) this.hf.setCellContents(r, r.content); }) : [];
     const out: Changed[] = edits.map(({ sheet, row, col }) => ({ sheet, row, col }));
     const reported: Changed[] = [...out];
     for (const ch of changes) {
@@ -203,12 +228,18 @@ export class Engine {
       this.syncValue(e.sheet, e.row, e.col, this.value(e.sheet, e.row, e.col));
       this.anchors.add(`${e.sheet}:${e.row}:${e.col}`);
     }
+    const touched = new Set(reported.map((o) => `${o.sheet}:${o.row}:${o.col}`));
+    const hit = (si: number, a: Range) => {
+      if ((a.r2 - a.r1 + 1) * (a.c2 - a.c1 + 1) > reported.length) return reported.some((o) => o.sheet === si && inRange(a, o.row, o.col));
+      for (let r = a.r1; r <= a.r2; r++) for (let c = a.c1; c <= a.c2; c++) if (touched.has(`${si}:${r}:${c}`)) return true;
+      return false;
+    };
     for (const key of [...this.anchors]) {
       const [si, row, col] = key.split(':').map(Number);
       const c = getCell(this.wb.sheets[si], row, col);
       if (!c?.f || c.frozen) { this.anchors.delete(key); continue; }
       const area = c.arrayRef ? parseRange(c.arrayRef) : { r1: row, c1: col, r2: row, c2: col };
-      if (!reported.some((o) => o.sheet === si && inRange(area, o.row, o.col))) continue;
+      if (!hit(si, area)) continue;
       out.push(...this.syncArrayRef(si, row, col, c));
     }
     return out;

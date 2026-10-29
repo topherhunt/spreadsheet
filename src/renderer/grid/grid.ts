@@ -137,8 +137,13 @@ export class Grid {
   }
 
   setZoom(z: number): void {
+    const top = this.rows.indexAt(this.fh + this.scroller.scrollTop), left = this.cols.indexAt(this.fw + this.scroller.scrollLeft);
+    const a = this.sel.anchor, box = this.el.getBoundingClientRect(), r = this.cellRect(a.row, a.col);
+    const anchorShown = r.top >= box.top + this.hh && r.bottom <= box.bottom && r.left >= box.left + this.hw && r.right <= box.right;
     this.zoom = Math.min(4, Math.max(0.25, Math.round(z * 100) / 100));
     this.relayout();
+    this.scroller.scrollTo({ left: this.cols.offset(left) - this.fw, top: this.rows.offset(top) - this.fh, behavior: 'instant' });
+    if (anchorShown) this.scrollToCell(a.row, a.col);
   }
 
   /** Recomputes sizes and styles (after structural, size, filter or style changes) and redraws. */
@@ -187,6 +192,12 @@ export class Grid {
     const w = this.cols.offset(r.c2 + 1) - this.cols.offset(r.c1);
     const hgt = this.rows.offset(r.r2 + 1) - this.rows.offset(r.r1);
     return new DOMRect(box.left + x, box.top + y, w, hgt);
+  }
+
+  /** Whether freezing this many rows and columns leaves at least a quarter of the grid to scroll. */
+  canFreeze(rows: number, cols: number): boolean {
+    const room = (size: number, header: number) => (size - header) * 0.75;
+    return this.rows.offset(rows) <= room(this.scroller.clientHeight, this.hh) && this.cols.offset(cols) <= room(this.scroller.clientWidth, this.hw);
   }
 
   /** Scrolls the least distance that brings the cell into view. */
@@ -403,7 +414,7 @@ export class Grid {
       for (let c = Math.max(c0, f.range.c1); c <= Math.min(c1, f.range.c2); c++) {
         if (!this.cols.size(c)) continue;
         const b = this.filterBtnBox(c);
-        out += `<div class="filter-btn qa-filter-btn qa-filter-btn-${c}${f.columns[c] ? ' on' : ''}" style="left:${b.l}px;top:${b.t}px"><i class="bi bi-funnel${f.columns[c] ? '-fill' : ''}"></i></div>`;
+        out += `<div class="filter-btn qa-filter-btn qa-filter-btn-${c}${f.columns[c] ? ' on' : ''}" style="left:${b.l}px;top:${b.t}px;width:${b.size}px;height:${b.size}px;font-size:${Math.round(b.size * 0.6)}px"><i class="bi bi-funnel${f.columns[c] ? '-fill' : ''}"></i></div>`;
       }
     }
     if (this.marquee && vis(this.marquee)) out += box(this.marquee, 'copy-marquee');
@@ -422,10 +433,10 @@ export class Grid {
     return out;
   }
 
-  private filterBtnBox(c: number): { l: number; t: number } {
+  private filterBtnBox(c: number): { l: number; t: number; size: number } {
     const f = this.sheet.filter!;
-    const size = Math.round(FILTER_BTN * Math.min(1, this.zoom) );
-    return { l: this.cols.offset(c + 1) - size - 3, t: this.rows.offset(f.range.r1) + Math.max(0, (this.rows.size(f.range.r1) - size) / 2) };
+    const size = Math.round(FILTER_BTN * Math.min(1, this.zoom));
+    return { l: this.cols.offset(c + 1) - size - 3, t: this.rows.offset(f.range.r1) + Math.max(0, (this.rows.size(f.range.r1) - size) / 2), size };
   }
 
   private renderColHeaders(el: HTMLElement, c0: number, c1: number): void {
@@ -475,15 +486,22 @@ export class Grid {
       const c = this.cols.indexAt(sx);
       const right = this.cols.offset(c + 1), left = this.cols.offset(c);
       if (Math.abs(sx - right) <= 4) return c;
-      if (Math.abs(sx - left) <= 4 && c > 0) return this.cols.prevVisible(c - 1);
+      if (Math.abs(sx - left) <= 4 && c > 0) return this.shownBefore(this.cols, c, this.frozenCols, this.fw + this.scroller.scrollLeft);
     } else if (area === 'row') {
       const sy = this.sheetY(y);
       const r = this.rows.indexAt(sy);
       const bottom = this.rows.offset(r + 1), top = this.rows.offset(r);
       if (Math.abs(sy - bottom) <= 3) return r;
-      if (Math.abs(sy - top) <= 3 && r > 0) return this.rows.prevVisible(r - 1);
+      if (Math.abs(sy - top) <= 3 && r > 0) return this.shownBefore(this.rows, r, this.frozenRows, this.fh + this.scroller.scrollTop);
     }
     return null;
+  }
+
+  /** The index whose far border is drawn at `i`'s near edge. When the one before `i` is scrolled out of view, that's the last frozen one, if any. */
+  private shownBefore(axis: Axis, i: number, frozen: number, scrolledFrom: number): number | null {
+    const prev = axis.prevVisible(i - 1);
+    if (prev < frozen || axis.offset(prev) >= scrolledFrom) return prev;
+    return frozen > 0 ? axis.prevVisible(frozen - 1) : null;
   }
 
   private onFillHandle(x: number, y: number): boolean {
@@ -500,7 +518,7 @@ export class Grid {
     if (row !== f.range.r1 || col < f.range.c1 || col > f.range.c2) return null;
     const b = this.filterBtnBox(col);
     const sx = this.sheetX(x), sy = this.sheetY(y);
-    return sx >= b.l - 2 && sx <= b.l + FILTER_BTN + 2 && sy >= b.t - 2 && sy <= b.t + FILTER_BTN + 2 ? col : null;
+    return sx >= b.l - 2 && sx <= b.l + b.size + 2 && sy >= b.t - 2 && sy <= b.t + b.size + 2 ? col : null;
   }
 
   /** Measured from the scroller's box: `offsetX/Y` are relative to the spacer under the pointer, so they include the scroll offset. */
@@ -528,6 +546,8 @@ export class Grid {
     const { x, y } = this.local(e);
     const area = this.area(x, y);
     const pos = this.cellAt(x, y);
+    const merge = area === 'cell' ? mergeAt(this.sheet, pos.row, pos.col) : undefined;
+    if (merge) { pos.row = merge.r1; pos.col = merge.c1; }
     this.lastPointer = { x, y };
 
     if (this.editing && area === 'cell' && this.events.canPoint()) {
@@ -612,8 +632,8 @@ export class Grid {
     const { x, y } = this.lastPointer;
     const W = this.el.clientWidth, H = this.el.clientHeight;
     let dx = 0, dy = 0;
-    if (d.kind !== 'rows') { if (x > W - 10) dx = 20; else if (x < this.hw + this.fw && x < this.hw) dx = -20; }
-    if (d.kind !== 'cols') { if (y > H - 10) dy = 20; else if (y < this.hh) dy = -20; }
+    if (d.kind !== 'rows') { if (x > W - 10) dx = 20; else if (x < this.hw + this.fw && this.scroller.scrollLeft > 0) dx = -20; }
+    if (d.kind !== 'cols') { if (y > H - 10) dy = 20; else if (y < this.hh + this.fh && this.scroller.scrollTop > 0) dy = -20; }
     if (!dx && !dy) return;
     this.scroller.scrollTo({ left: this.scroller.scrollLeft + dx, top: this.scroller.scrollTop + dy, behavior: 'instant' });
     this.onDragMove();
@@ -624,6 +644,9 @@ export class Grid {
     if (!d) return;
     const { x, y } = this.lastPointer;
     const pos = this.cellAt(x, y);
+    // Over the frozen part while scrolled, the drag reaches the first scrolled row/col; frozen ones once scrolled back.
+    if (y < this.hh + this.fh && this.scroller.scrollTop > 0) pos.row = this.rows.indexAt(this.fh + this.scroller.scrollTop);
+    if (x < this.hw + this.fw && this.scroller.scrollLeft > 0) pos.col = this.cols.indexAt(this.fw + this.scroller.scrollLeft);
     switch (d.kind) {
       case 'select':
         if (pos.row !== this.sel.head.row || pos.col !== this.sel.head.col) { this.sel.extendTo(pos); this.changed(); }
@@ -684,11 +707,13 @@ export class Grid {
     else if (d.kind === 'resize-row' && d.px !== d.startSize) this.events.resizeRows(this.targetsFor('row', d.row), Math.round(d.px / this.zoom));
   }
 
-  /** Resizing a selected header resizes every selected one, like Sheets. */
+  /** Resizing a selected header resizes every selected one up to the used extent, like Sheets. */
   private targetsFor(axis: 'row' | 'col', i: number): number[] {
     const p = this.sel.primary();
-    if (axis === 'col' && this.sel.isWholeCols() && i >= p.c1 && i <= p.c2) return Array.from({ length: p.c2 - p.c1 + 1 }, (_, k) => p.c1 + k);
-    if (axis === 'row' && this.sel.isWholeRows() && i >= p.r1 && i <= p.r2) return Array.from({ length: p.r2 - p.r1 + 1 }, (_, k) => p.r1 + k);
+    const ext = sheetExtent(this.sheet);
+    const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, k) => a + k);
+    if (axis === 'col' && this.sel.isWholeCols() && i >= p.c1 && i <= p.c2) return span(p.c1, Math.min(p.c2, Math.max(i, ext.cols - 1)));
+    if (axis === 'row' && this.sel.isWholeRows() && i >= p.r1 && i <= p.r2) return span(p.r1, Math.min(p.r2, Math.max(i, ext.rows - 1)));
     return [i];
   }
 
@@ -706,6 +731,7 @@ export class Grid {
 
   private onContextMenu(e: MouseEvent): void {
     e.preventDefault();
+    if (this.overScrollbar(e)) return;
     const { x, y } = this.local(e);
     const area = this.area(x, y);
     const pos = this.cellAt(x, y);
@@ -726,7 +752,8 @@ export class Grid {
 
   select(anchor: Pos, head: Pos = anchor, scroll = true): void {
     this.sel.set(anchor, head);
-    if (scroll) this.scrollToCell(head.row, head.col);
+    // A whole row or column ends at the sheet's last column or row; scrolling there would grow the grid to its maximum.
+    if (scroll) this.scrollToCell(head.row >= MAX_ROWS - 1 ? anchor.row : head.row, head.col >= MAX_COLS - 1 ? anchor.col : head.col);
     this.changed();
   }
 
@@ -739,16 +766,16 @@ export class Grid {
   move(dr: number, dc: number, extend: boolean, jump: boolean): void {
     const from = extend ? this.sel.head : this.sel.anchor;
     let { row, col } = from;
-    const lim = this.limits();
     if (jump) {
       ({ row, col } = this.jumpFrom(row, col, dr, dc));
     } else {
       // Step out of a merged block from its far edge.
       const m = mergeAt(this.sheet, row, col);
       if (m && !extend) { if (dr > 0) row = m.r2; if (dc > 0) col = m.c2; if (dr < 0) row = m.r1; if (dc < 0) col = m.c1; }
-      row += dr; col += dc;
-      while (row > 0 && row < lim.row && !this.rows.size(row)) row += dr;
-      while (col > 0 && col < lim.col && !this.cols.size(col)) col += dc;
+      row = Math.max(0, Math.min(MAX_ROWS - 1, row + dr));
+      col = Math.max(0, Math.min(MAX_COLS - 1, col + dc));
+      row = this.visibleFrom(this.rows, row, Math.sign(dr), from.row);
+      col = this.visibleFrom(this.cols, col, Math.sign(dc), from.col);
     }
     row = Math.max(0, Math.min(MAX_ROWS - 1, row));
     col = Math.max(0, Math.min(MAX_COLS - 1, col));
@@ -756,6 +783,14 @@ export class Grid {
     if (!extend) { const m = mergeAt(this.sheet, row, col); if (m) { row = m.r1; col = m.c1; } }
     if (extend) { this.sel.extendTo({ row, col }); this.scrollToCell(row, col); this.changed(); }
     else this.select({ row, col });
+  }
+
+  /** The first visible index from `i` going `step` (-1/1), or `fallback` when everything up to index 0 is hidden. Indexes past the grid's extent are visible. */
+  private visibleFrom(axis: Axis, i: number, step: number, fallback: number): number {
+    if (!step) return i;
+    const last = axis === this.rows ? this.rowCount - 1 : this.colCount - 1;
+    while (i >= 0 && i <= last && !axis.size(i)) i += step;
+    return i < 0 ? fallback : i;
   }
 
   private jumpFrom(row: number, col: number, dr: number, dc: number): Pos {

@@ -268,7 +268,9 @@ export function shiftFormula(formula: string, formulaSheet: string, change: Stru
     if (count > 0) {
       if (lo >= at) lo += count;
       if (hi >= at) hi += count;
-      if (hi >= max) return null;
+      // A range pushed past the sheet's end keeps its end there, as in Excel.
+      if (lo >= max) return null;
+      hi = Math.min(hi, max - 1);
     } else {
       const delEnd = at - count - 1; // inclusive
       if (lo >= at && hi <= delEnd) return null;

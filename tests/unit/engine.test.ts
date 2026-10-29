@@ -152,6 +152,15 @@ describe('formula engine', () => {
     expect(e.value(0, 0, 2)).toBe(43);
   });
 
+  it('builds quickly when one stray cell sits far from the rest', () => {
+    const wb = book([[n(1)]]);
+    setCell(wb.sheets[0], 10000, 16383, n(7));
+    const t = performance.now();
+    const e = new Engine(wb);
+    expect(performance.now() - t).toBeLessThan(200);
+    expect(e.evaluate(0, '=A1+XFD10001')).toBe(8);
+  });
+
   it('resolves workbook defined names', () => {
     const wb = book([[n(10), n(20)]]);
     wb.definedNames.push({ name: 'Total', ref: 'Sheet1!$A$1:$B$1' });

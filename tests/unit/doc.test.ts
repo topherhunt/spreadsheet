@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { newWorkbook, readDelimited } from '../../src/core/csv';
+import { MAX_ROWS } from '../../src/core/addr';
+import { newWorkbook, readDelimited, writeDelimited } from '../../src/core/csv';
 import { Doc } from '../../src/core/doc';
 import { columnValues, compareValues, dataRegion } from '../../src/core/filter';
 import { parseTyped } from '../../src/core/input';
@@ -160,6 +161,42 @@ describe('Doc editing', () => {
     expect(v(d.wb, [2, 0])).toBe(3);
   });
 
+  it('bolds, clears and undoes 100,000 cells in a few seconds at most', () => {
+    const rows = Array.from({ length: 20000 }, (_, i) => `${i},a${i},${i * 2},b,${i % 7}`).join('\n');
+    const d = new Doc(readDelimited(`${rows}\n`, 'csv'));
+    d.setInput(0, 0, 6, '=SUM(A1:E20000)');
+    let sum = 0;
+    for (let i = 0; i < 20000; i++) sum += i + i * 2 + (i % 7);
+    expect(v(d.wb, [0, 6])).toBe(sum);
+    const all = [{ r1: 0, c1: 0, r2: 19999, c2: 4 }];
+    const timed = (step: () => void) => { const t = performance.now(); step(); expect(performance.now() - t).toBeLessThan(3000); };
+    timed(() => d.setStyle(0, all, { bold: true }));
+    timed(() => d.clear(0, all));
+    expect(v(d.wb, [0, 6])).toBe(0);
+    timed(() => d.undo());
+    expect(v(d.wb, [0, 6])).toBe(sum);
+    expect(v(d.wb, [19999, 0])).toBe(19999);
+  });
+
+  it('refuses to insert rows that would push cells off the sheet, and keeps working', () => {
+    const d = new Doc(newWorkbook());
+    d.setInput(0, MAX_ROWS - 1, 0, 'last');
+    expect(() => d.insertRows(0, 1, 1)).toThrow(/off the end of the sheet/);
+    expect(v(d.wb, [MAX_ROWS - 1, 0])).toBe('last');
+    d.setInput(0, 0, 0, '=1+1');
+    expect(v(d.wb, [0, 0])).toBe(2);
+  });
+
+  it('inserting rows keeps a range that runs to the last row, and moves internal links', () => {
+    const d = new Doc(newWorkbook());
+    d.pasteText(0, 0, 0, [['=SUM(B2:B1048576)']]);
+    d.setInput(0, 0, 1, 'go');
+    d.setLink(0, 0, 1, '#Sheet1!B6000');
+    d.insertRows(0, 4, 1);
+    expect(f(d.wb, [0, 0])).toBe('SUM(B2:B1048576)');
+    expect(getCell(d.wb.sheets[0], 0, 1)!.link).toBe('#Sheet1!B6001');
+  });
+
   it('deleting a referenced column turns references into #REF!', () => {
     const d = new Doc(newWorkbook());
     d.pasteText(0, 0, 0, [['1', '2', '=B1']]);
@@ -250,5 +287,12 @@ describe('Doc filtering and sorting', () => {
     expect(s.rows[1]!.filtered).toBe(true);
     expect(s.rows[2]!.filtered).toBeFalsy();
     expect(back.styles.fonts[back.styles.xfs[getCell(s, 0, 0)!.s!].fontId].bold).toBe(true);
+  });
+});
+
+describe('delimited files', () => {
+  it.each([['csv', 'a, b, 12\n"x,y","say ""hi""",3\n'], ['tsv', 'a\t b \t12\n']] as const)('an untouched %s saves exactly as read', (format, text) => {
+    const wb = readDelimited(text, format);
+    expect(writeDelimited(wb, format, (c) => displayCell(wb, c).text)).toBe(text);
   });
 });

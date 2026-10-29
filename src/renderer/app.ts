@@ -820,7 +820,10 @@ export class App {
       case 'freeze-none': this.doc.setFreeze(si, 0, 0); return;
       case 'freeze-row': this.doc.setFreeze(si, 1, this.sheet.freeze.cols); return;
       case 'freeze-col': this.doc.setFreeze(si, this.sheet.freeze.rows, 1); return;
-      case 'freeze-selection': this.doc.setFreeze(si, sel.anchor.row, sel.anchor.col); return;
+      case 'freeze-selection':
+        if (!this.grid.canFreeze(sel.anchor.row, sel.anchor.col)) throw new Error('Can’t freeze that many rows or columns: they wouldn’t leave room to scroll. Select a cell nearer the top-left.');
+        this.doc.setFreeze(si, sel.anchor.row, sel.anchor.col);
+        return;
       case 'zoom-in': this.zoomBy(1); return;
       case 'zoom-out': this.zoomBy(-1); return;
       case 'zoom-reset': this.setZoom(1); return;

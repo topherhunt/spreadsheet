@@ -98,6 +98,8 @@ export function writeDelimited(wb: Workbook, format: 'csv' | 'tsv', display: (c:
     }
     data.push(fields);
   }
-  const text = Papa.unparse(data, { delimiter, newline: opts.newline, quotes: false, escapeFormulae: false });
+  // Quote only what must be quoted: Papa.unparse also quotes leading and trailing spaces, which changes untouched fields.
+  const quote = (s: string) => (s.includes(delimiter) || /["\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const text = data.map((fields) => fields.map(quote).join(delimiter)).join(opts.newline);
   return (opts.bom ? '﻿' : '') + text + (data.length ? opts.newline : '');
 }
