@@ -436,7 +436,7 @@ export class Grid {
   private filterBtnBox(c: number): { l: number; t: number; size: number } {
     const f = this.sheet.filter!;
     const size = Math.round(FILTER_BTN * Math.min(1, this.zoom));
-    return { l: this.cols.offset(c + 1) - size - 3, t: this.rows.offset(f.range.r1) + Math.max(0, (this.rows.size(f.range.r1) - size) / 2), size };
+    return { l: this.cols.offset(c + 1) - size - 1, t: this.rows.offset(f.range.r1) + Math.max(0, (this.rows.size(f.range.r1) - size) / 2), size };
   }
 
   private renderColHeaders(el: HTMLElement, c0: number, c1: number): void {
@@ -521,8 +521,9 @@ export class Grid {
     return sx >= b.l - 2 && sx <= b.l + b.size + 2 && sy >= b.t - 2 && sy <= b.t + b.size + 2 ? col : null;
   }
 
-  /** Measured from the scroller's box: `offsetX/Y` are relative to the spacer under the pointer, so they include the scroll offset. */
+  /** Overlay scrollbars take no space but hit-test as the scroller while shown (the spacer covers the rest); classic ones sit outside `clientWidth/Height`. */
   private overScrollbar(e: MouseEvent): boolean {
+    if (e.target === this.scroller) return true;
     const r = this.scroller.getBoundingClientRect();
     return e.clientX - r.left >= this.scroller.clientWidth || e.clientY - r.top >= this.scroller.clientHeight;
   }
@@ -845,7 +846,7 @@ export class Grid {
       const longest = st.wrap ? text.split('\n').reduce((a, b) => (a.length > b.length ? a : b)) : text;
       max = Math.max(max, ctx.measureText(longest).width);
     });
-    if (sheet.filter && sheet.filter.range.c1 <= col && col <= sheet.filter.range.c2) max += FILTER_BTN + 4;
+    if (sheet.filter && sheet.filter.range.c1 <= col && col <= sheet.filter.range.c2) max += FILTER_BTN + 2;
     return Math.min(1000, Math.ceil(max + 10));
   }
 

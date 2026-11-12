@@ -6,3 +6,4 @@ playwright-report/
 .last-test-pass.json
 .DS_Store
 *.log
+TODO.md

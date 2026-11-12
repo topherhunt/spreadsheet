@@ -136,16 +136,20 @@ test('dragging up into a frozen row while scrolled scrolls back instead of jumpi
   expect(sel.r2).toBe(row);
 });
 
-test('filter buttons stay inside their cell when zoomed out', async ({ dir, launch }) => {
+test('filter buttons sit flush against their cell\'s right gridline, also when zoomed out', async ({ dir, launch }) => {
   const s = await launch([Spreadsheet.write(dir, 'people.csv', 'name,age\nAda,36\nAlan,41\n')]);
   await s.page.locator('.qa-tb-auto-table').click();
+  const check = async () => {
+    const btn = (await s.page.locator('.qa-filter-btn-0').boundingBox())!;
+    const cell = await s.model<{ left: number; top: number; right: number; bottom: number }>('(app) => app.grid.cellRect(0, 0).toJSON()');
+    expect(Math.abs(btn.x + btn.width - (cell.right - 1))).toBeLessThanOrEqual(0.5);
+    expect(btn.y + btn.height).toBeLessThanOrEqual(cell.bottom + 0.5);
+    expect(btn.x).toBeGreaterThanOrEqual(cell.left);
+  };
+  await check();
   for (let i = 0; i < 5; i++) await s.command('zoom-out');
   await expect(s.page.locator('.qa-zoom')).toHaveText('50%');
-  const btn = (await s.page.locator('.qa-filter-btn-0').boundingBox())!;
-  const cell = await s.model<{ left: number; top: number; right: number; bottom: number }>('(app) => app.grid.cellRect(0, 0).toJSON()');
-  expect(btn.x + btn.width).toBeLessThanOrEqual(cell.right + 0.5);
-  expect(btn.y + btn.height).toBeLessThanOrEqual(cell.bottom + 0.5);
-  expect(btn.x).toBeGreaterThanOrEqual(cell.left);
+  await check();
 });
 
 test('dragging the top edge of the first row header after scrolling does not resize a row scrolled out of view', async ({ launch }) => {
@@ -179,3 +183,22 @@ test('freezing at a cell near the top-left still works', async ({ launch }) => {
   await s.command('freeze-selection');
   await expect.poll(() => s.model<{ rows: number; cols: number }>('(app) => app.sheet.freeze')).toEqual({ rows: 2, cols: 1 });
 });
+
+for (const axis of ['vertical', 'horizontal'] as const) {
+  test(`dragging the ${axis} scrollbar scrolls without selecting cells`, async ({ launch }) => {
+    const s = await launch();
+    const scroller = s.page.locator('.qa-grid-scroll');
+    // Scrolling first shows macOS overlay scrollbars, which only hit-test while shown.
+    await s.wheel(axis === 'vertical' ? 0 : 300, axis === 'vertical' ? 300 : 0);
+    const pos = () => scroller.evaluate((el) => (el.scrollTop + el.scrollLeft));
+    const before = await pos();
+    const b = (await scroller.boundingBox())!;
+    const [x, y] = axis === 'vertical' ? [b.x + b.width - 4, b.y + b.height / 2] : [b.x + b.width / 2, b.y + b.height - 4];
+    await s.page.mouse.move(x, y);
+    await s.page.mouse.down();
+    await s.page.mouse.move(axis === 'vertical' ? x : x + 100, axis === 'vertical' ? y + 100 : y, { steps: 5 });
+    await s.page.mouse.up();
+    await expect.poll(pos).not.toBe(before);
+    await expect(s.page.locator('.qa-name-box')).toHaveValue('A1');
+  });
+}
